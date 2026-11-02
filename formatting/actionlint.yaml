@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels: []
+
+paths:
+  '**/*.{yml,yaml}':
+    ignore:
+      - 'property "workflow_sha" is not defined'

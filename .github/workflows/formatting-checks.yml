@@ -1,0 +1,137 @@
+name: formatting-checks
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: formatting-checks-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  ACTIONLINT_VERSION: '1.7.12'
+  ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+  EDITORCONFIG_CHECKER_VERSION: '4.0.2'
+  EDITORCONFIG_CHECKER_SHA256: '44efaef3ed14c6ab52eb87481d78e5e5c204796dccf26e2f4598a61ba17f8003'
+  GDSTYLE_VERSION: '0.5.0'
+  GDSTYLE_SHA256: '1322ca08a395b00932d17ff59c9ee634d5b01c6d623c7771865c80689b591936'
+  YAMLLINT_VERSION: '1.38.0'
+
+jobs:
+  formatting:
+    name: 'Formatting checks'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      REPO_DIR: ${{ github.workspace }}/repo
+      CENTRAL_DIR: ${{ github.workspace }}/central/formatting
+    steps:
+      - name: 'Resolve the formatting rules version'
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Cannot resolve the commit of the formatting checks workflow."
+            exit 1
+          fi
+          {
+            echo "WORKFLOW_SHA=$WORKFLOW_SHA"
+            echo "LIST_DIR=$RUNNER_TEMP/formatting-lists"
+            echo "TOOLS_DIR=$RUNNER_TEMP/formatting-tools"
+          } >> "$GITHUB_ENV"
+
+      - name: 'Checkout the repository to check'
+        uses: actions/checkout@v7
+        with:
+          path: repo
+          persist-credentials: false
+
+      - name: 'Checkout the formatting rules'
+        uses: actions/checkout@v7
+        with:
+          repository: godot-gdunit-labs/global-workflows
+          ref: ${{ env.WORKFLOW_SHA }}
+          path: central
+          persist-credentials: false
+
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: 'Install the formatting tools'
+        run: |
+          set -euo pipefail
+          npm ci --prefix "$CENTRAL_DIR" --ignore-scripts --no-audit --no-fund
+          mkdir -p "$TOOLS_DIR"
+          cd "$TOOLS_DIR"
+          actionlint_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          curl -fsSLo actionlint.tar.gz "${actionlint_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ec_url="https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EDITORCONFIG_CHECKER_VERSION}"
+          curl -fsSLo ec.tar.gz "${ec_url}/editorconfig-checker-linux-amd64.tar.gz"
+          echo "${EDITORCONFIG_CHECKER_SHA256}  ec.tar.gz" | sha256sum -c -
+          tar -xzf ec.tar.gz editorconfig-checker
+          gdstyle_url="https://github.com/atelico/gdstyle/releases/download/v${GDSTYLE_VERSION}"
+          curl -fsSLo gdstyle.tar.gz "${gdstyle_url}/gdstyle-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${GDSTYLE_SHA256}  gdstyle.tar.gz" | sha256sum -c -
+          tar -xzf gdstyle.tar.gz gdstyle
+          python3 -m venv yamllint-venv
+          yamllint-venv/bin/pip install --quiet "yamllint==${YAMLLINT_VERSION}"
+          {
+            echo "ACTIONLINT=$TOOLS_DIR/actionlint"
+            echo "EDITORCONFIG_CHECKER=$TOOLS_DIR/editorconfig-checker"
+            echo "GDSTYLE=$TOOLS_DIR/gdstyle"
+            echo "YAMLLINT=$TOOLS_DIR/yamllint-venv/bin/yamllint"
+          } >> "$GITHUB_ENV"
+
+      - name: 'Collect the files to check'
+        id: collect
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" collect "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Check line endings, final newline and whitespace'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" editorconfig "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Lint YAML files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" yaml "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Lint GitHub Actions workflows'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" workflows "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Lint Markdown files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" markdown "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Validate JSON files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" json "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Validate XML files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" xml "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Lint JavaScript files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" js "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Lint GDScript files'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" gdscript "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Check GDScript formatting'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" gdformat "$REPO_DIR" "$LIST_DIR"
+
+      - name: 'Write the summary'
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: node "$CENTRAL_DIR/scripts/run.mjs" summary "$REPO_DIR" "$LIST_DIR"

@@ -1,0 +1,4 @@
+# Files of godot-gdunit-labs/gdUnit4 skipped by the formatting checks
+documentation/assets/**
+stylecop.json
+addons/gdUnit4/test/**/resources/**

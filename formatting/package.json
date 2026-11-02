@@ -1,0 +1,17 @@
+{
+  "name": "formatting-checks",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "fast-xml-parser": "5.11.2",
+    "globals": "17.14.0",
+    "jsonc-parser": "3.3.1",
+    "markdownlint": "0.42.0",
+    "minimatch": "11.0.3"
+  }
+}
