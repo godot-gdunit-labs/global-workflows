@@ -269,7 +269,7 @@ function checkGdformat(repoDir, files) {
 const MAX_SUMMARY_FILES = 50;
 
 const isPrintable = (char) => char.charCodeAt(0) >= 0x20 && char !== "`";
-const asCode = (value) => `\`${[...String(value)].filter(isPrintable).join("").replace(/\|/g, "\\|").slice(0, 200)}\``;
+const asCode = (value) => `\`${[...String(value)].filter(isPrintable).join("").slice(0, 200).replace(/\\/g, "\\\\").replace(/\|/g, "\\|")}\``;
 
 function readResult(listDir, command) {
   try {
