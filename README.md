@@ -23,6 +23,7 @@ The repositories need no workflow file of their own.
 | XML syntax                                 | `*.xml`                                                                | [fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser)            |                                                         |
 | JavaScript                                 | `*.js`, `*.cjs`, `*.mjs`                                               | [ESLint](https://eslint.org)                                                         | [`eslint.config.mjs`](formatting/eslint.config.mjs)     |
 | GDScript lint and format                   | `*.gd`                                                                 | [gdstyle](https://github.com/atelico/gdstyle)                                        | [`gdstyle.toml`](formatting/gdstyle.toml)               |
+| C# format                                  | `*.cs`                                                                 | [dotnet format](https://github.com/dotnet/format)                                    | [`.editorconfig`](formatting/.editorconfig)             |
 
 Only files tracked by git are checked. Files matching [`default-ignore.txt`](formatting/default-ignore.txt), such as `node_modules` or `.idea`, are skipped.
 Every check runs even if an earlier one fails, and each finding is shown as an annotation on the changed file in the pull request.
@@ -64,6 +65,8 @@ The check is safe for pull requests from forks, because nothing from the checked
 * The rules are checked out at the exact commit of the workflow, and configuration files of the checked repository are never loaded.
 * Markdown and JavaScript are checked with the central configuration only,
   as both tools would otherwise run JavaScript configuration files found in the repository.
+* C# files are checked with `dotnet format whitespace` in folder mode, which runs no `NuGet` restore and no `MSBuild`,
+  so no project file or build script of the repository is loaded.
 * npm packages are installed from the lockfile without install scripts, and downloaded tool binaries are verified by their SHA-256 checksum.
 * Symlinked files are skipped, and tool output reaches the log only as escaped annotations.
 
@@ -71,4 +74,5 @@ The check is safe for pull requests from forks, because nothing from the checked
 
 * Rules: change the files in [`formatting/`](formatting), the change applies to all repositories once it is merged to `main`.
 * Actions and npm packages: [Dependabot](.github/dependabot.yml) opens a pull request every week.
-* actionlint, editorconfig-checker, gdstyle and yamllint: update the version, and for the binaries the SHA-256 checksum, in the `env` section of the workflow.
+* actionlint, editorconfig-checker, gdstyle, yamllint and the .NET SDK: update the version, and for the binaries the SHA-256 checksum,
+  in the `env` section of the workflow.

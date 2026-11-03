@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
@@ -20,6 +21,7 @@ const GROUPS = {
   js: (file) => /\.[cm]?js$/i.test(file),
   xml: (file) => /\.xml$/i.test(file),
   gdscript: (file) => /\.gd$/i.test(file),
+  csharp: (file) => /\.cs$/i.test(file),
 };
 GROUPS.editorconfig = (file) => ["yaml", "markdown", "json", "js", "xml"].some((group) => GROUPS[group](file));
 GROUPS.gdformat = GROUPS.gdscript;
@@ -34,6 +36,7 @@ const CHECK_TITLES = {
   js: "JavaScript",
   gdscript: "GDScript lint",
   gdformat: "GDScript format",
+  csharp: "C# format",
 };
 
 let errorCount = 0;
@@ -71,8 +74,8 @@ function toolFailure(tool, result) {
   }
 }
 
-function runTool(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, env: TOOL_ENV, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+function runTool(command, args, cwd, env = TOOL_ENV) {
+  const result = spawnSync(command, args, { cwd, env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   if (result.error) {
     throw result.error;
   }
@@ -210,10 +213,14 @@ function checkXml(repoDir, files) {
   }
 }
 
-function checkEditorconfig(repoDir, files) {
+function useCentralEditorconfig(repoDir) {
   const target = path.join(repoDir, ".editorconfig");
   rmSync(target, { force: true });
   copyFileSync(centralFile(".editorconfig"), target);
+}
+
+function checkEditorconfig(repoDir, files) {
+  useCentralEditorconfig(repoDir);
   for (const chunk of chunks(files)) {
     const args = ["-config", centralFile("editorconfig-checker.json"), "-no-color", "-format", "codeclimate", ...chunk.map(asArgument)];
     const result = runTool(process.env.EDITORCONFIG_CHECKER, args, repoDir);
@@ -263,6 +270,39 @@ function checkGdformat(repoDir, files) {
     if (result.status === 1 && findings === 0) {
       toolFailure("gdstyle fmt", result);
     }
+  }
+}
+
+const DOTNET_ENV = {
+  ...TOOL_ENV,
+  DOTNET_ROOT: process.env.DOTNET_ROOT ?? "",
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1",
+  DOTNET_NOLOGO: "1",
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1",
+};
+
+function checkCsharp(repoDir, files) {
+  useCentralEditorconfig(repoDir);
+  const reportDir = mkdtempSync(path.join(os.tmpdir(), "csharp-format-"));
+  try {
+    for (const chunk of chunks(files)) {
+      const reportFile = path.join(reportDir, "format-report.json");
+      rmSync(reportFile, { force: true });
+      const args = ["format", "whitespace", repoDir, "--folder", "--verify-no-changes", "--report", reportFile, "--include", ...chunk];
+      const result = runTool("dotnet", args, CENTRAL_DIR, DOTNET_ENV);
+      if ((result.status !== 0 && result.status !== 2) || !existsSync(reportFile)) {
+        toolFailure("dotnet format", result);
+        continue;
+      }
+      for (const document of JSON.parse(readFileSync(reportFile, "utf8").replace(/^\uFEFF/, ""))) {
+        const file = path.relative(repoDir, document.FilePath).split(path.sep).join("/");
+        for (const change of document.FileChanges) {
+          report("error", file, change.LineNumber, change.CharNumber, `dotnet format ${change.DiagnosticId}: ${change.FormatDescription}`);
+        }
+      }
+    }
+  } finally {
+    rmSync(reportDir, { recursive: true, force: true });
   }
 }
 
@@ -324,6 +364,7 @@ const CHECKS = {
   editorconfig: checkEditorconfig,
   gdscript: checkGdscript,
   gdformat: checkGdformat,
+  csharp: checkCsharp,
 };
 
 const [command, repoArgument, listArgument] = process.argv.slice(2);
