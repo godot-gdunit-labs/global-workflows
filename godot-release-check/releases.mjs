@@ -108,3 +108,19 @@ export function planUpdates(candidates, tested) {
   }
   return updates;
 }
+
+const PLAN_MARKER = /<!-- godot-release-plan: ([^>]*) -->/;
+
+export function planMarker(updates) {
+  return `<!-- godot-release-plan: ${updates.map((update) => releaseName(update.release)).join(",")} -->`;
+}
+
+export function parsePlan(body) {
+  const match = PLAN_MARKER.exec(body ?? "");
+  return match ? match[1].split(",").filter(Boolean) : [];
+}
+
+export function withoutHandled(updates, closedBodies) {
+  const handled = new Set(closedBodies.flatMap(parsePlan));
+  return updates.filter((update) => !handled.has(releaseName(update.release)));
+}
