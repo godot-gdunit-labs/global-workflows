@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compareStatus, compareVersions, findMissing, normalizeTested, normalizeVersion, parseTag, releaseName, selectCandidates } from "./releases.mjs";
+import { compareStatus, compareVersions, normalizeTested, normalizeVersion, parseTag, planUpdates, releaseName, selectCandidates } from "./releases.mjs";
 
 const release = (tag, prerelease, published = "2026-10-01T00:00:00Z") => ({ tag_name: tag, prerelease, draft: false, published_at: published });
 const tested = (...names) => normalizeTested(names.map((name) => parseTag(name)));
@@ -73,31 +73,56 @@ test("normalizeTested drops invalid entries and duplicates", () => {
   assert.deepEqual(names(result), ["4.7-stable", "4.8-dev7"]);
 });
 
-test("findMissing skips releases below the lowest tested version", () => {
-  const missing = findMissing(selectCandidates(RELEASES), tested("4.7-stable", "4.7.1-stable", "4.8-dev7"));
-  assert.deepEqual(names(missing), ["4.7.2-stable", "4.8-beta2"]);
+const plan = (candidates, testedNames) =>
+  planUpdates(candidates, tested(...testedNames)).map((update) => ({
+    release: releaseName(update.release),
+    replaced: names(update.replaced),
+    newLine: update.newLine,
+  }));
+
+test("planUpdates skips releases below the lowest tested version", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7.2-stable", "4.8-beta2"]), []);
 });
 
-test("findMissing reports a patch of an older supported line", () => {
-  const missing = findMissing(selectCandidates(RELEASES), tested("4.6-stable", "4.6.2-stable", "4.7.2-stable"));
-  assert.deepEqual(names(missing), ["4.6.3-stable", "4.8-beta2"]);
-  assert.equal(missing[0].newLine, false);
-  assert.equal(missing[1].newLine, true);
+test("planUpdates updates a version line to its latest patch", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.6.2-stable", "4.7.2-stable"]), [
+    { release: "4.6.3-stable", replaced: ["4.6.2-stable"], newLine: false },
+    { release: "4.8-beta2", replaced: [], newLine: true },
+  ]);
 });
 
-test("findMissing marks a stable release of an untested line as new line", () => {
-  const missing = findMissing(selectCandidates(RELEASES), tested("4.5-stable", "4.6.2-stable"));
-  assert.deepEqual(names(missing), ["4.6.3-stable", "4.7.2-stable", "4.8-beta2"]);
-  assert.deepEqual(missing.map((entry) => entry.newLine), [false, true, true]);
+test("planUpdates shrinks a version line with several patches to the latest one", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.7.2-stable", "4.8-beta2"]), [
+    { release: "4.7.2-stable", replaced: ["4.7-stable", "4.7.1-stable"], newLine: false },
+  ]);
 });
 
-test("findMissing skips a prerelease that is not newer than the tested one", () => {
+test("planUpdates shrinks and updates a version line in one step", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.8-dev7"]), [
+    { release: "4.7.2-stable", replaced: ["4.7-stable", "4.7.1-stable"], newLine: false },
+    { release: "4.8-beta2", replaced: ["4.8-dev7"], newLine: false },
+  ]);
+});
+
+test("planUpdates adds a missing version line at or above the lowest tested version", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.5-stable", "4.6.3-stable"]), [
+    { release: "4.7.2-stable", replaced: [], newLine: true },
+    { release: "4.8-beta2", replaced: [], newLine: true },
+  ]);
+});
+
+test("planUpdates replaces the prereleases of a line once it is stable", () => {
+  const candidates = selectCandidates([release("4.8-stable", false), release("4.8-rc3", true)]);
+  assert.deepEqual(plan(candidates, ["4.7-stable", "4.8-rc2"]), [{ release: "4.8-stable", replaced: ["4.8-rc2"], newLine: false }]);
+});
+
+test("planUpdates skips a prerelease that is not newer than the tested one", () => {
   const candidates = [{ version: "4.8", status: "beta2" }];
-  assert.deepEqual(findMissing(candidates, tested("4.7-stable", "4.8-rc1")), []);
-  assert.deepEqual(findMissing(candidates, tested("4.7-stable", "4.8-beta2")), []);
-  assert.deepEqual(names(findMissing(candidates, tested("4.7-stable", "4.8-dev7"))), ["4.8-beta2"]);
+  assert.deepEqual(plan(candidates, ["4.7-stable", "4.8-rc1"]), []);
+  assert.deepEqual(plan(candidates, ["4.7-stable", "4.8-beta2"]), []);
+  assert.deepEqual(plan(candidates, ["4.7-stable", "4.8-dev7"]), [{ release: "4.8-beta2", replaced: ["4.8-dev7"], newLine: false }]);
 });
 
-test("findMissing reports nothing when nothing is tested", () => {
-  assert.deepEqual(findMissing(selectCandidates(RELEASES), []), []);
+test("planUpdates plans nothing when nothing is tested", () => {
+  assert.deepEqual(planUpdates(selectCandidates(RELEASES), []), []);
 });

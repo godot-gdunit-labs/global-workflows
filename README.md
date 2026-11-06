@@ -81,7 +81,8 @@ The check is safe for pull requests from forks, because nothing from the checked
 ## Godot Release Check
 
 The release check runs every Monday and looks for new Godot releases that the CI of a repository doesn't test yet.
-For each missing release it creates one issue in that repository, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
+For each version line, such as `4.7`, only the latest release should be tested, for example `4.7.2` instead of `4.7` and `4.7.1`.
+For each new release or version line it creates one issue in that repository, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
 Releases below the lowest Godot version a repository tests are ignored, and an issue is never created twice for the same release.
 
 The checked repositories are listed in the workflow. A manual run from the **Actions** tab can use `dry_run` to only show the result.

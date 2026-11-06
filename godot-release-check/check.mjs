@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { findMissing, normalizeTested, releaseName, selectCandidates } from "./releases.mjs";
+import { normalizeTested, planUpdates, releaseName, selectCandidates, versionLine } from "./releases.mjs";
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const REPOSITORIES = (process.env.REPOSITORIES ?? "").split(/[\s,]+/).filter(Boolean);
@@ -133,21 +133,39 @@ async function findExistingIssue(repository, release) {
   return result.items.find((issue) => (issue.body ?? "").includes(marker(repository, release)));
 }
 
-function issueBody(repository, release, tested) {
+function issueTitle(update) {
+  const name = releaseName(update.release);
+  return update.replaced.length === 0
+    ? `Adding \`Godot\` \`${name}\` to the CI matrix`
+    : `Updating the \`Godot\` \`${versionLine(update.release.version)}\` line to \`${name}\` in the CI matrix`;
+}
+
+function issueBody(repository, update, tested) {
+  const { release, replaced } = update;
   const name = releaseName(release);
-  const kind = release.status === "stable" ? "stable release" : "prerelease";
+  const list = (entries) => entries.map((entry) => `\`${releaseName(entry)}\``).join(", ");
+  const description = replaced.length === 0
+    ? [
+      `The \`Godot\` release \`${name}\` was published on ${release.published.slice(0, 10)}, but the CI workflows don't test it yet.`,
+      `They currently test ${list(tested)}.`,
+      ...(update.newLine ? ["", `This adds the new version line \`${versionLine(release.version)}\`, confirm that it should be supported.`] : []),
+      "",
+      `- add \`Godot\` \`${name}\` to the CI matrix, for example with the \`godot-ci-sync\` skill`,
+    ]
+    : [
+      `The CI workflows test ${list(replaced)} of the \`Godot\` \`${versionLine(release.version)}\` line.`,
+      `Only the latest release of a version line is tested, which is \`${name}\`, published on ${release.published.slice(0, 10)}.`,
+      "",
+      `- replace ${list(replaced)} with \`${name}\` in the CI matrix, for example with the \`godot-ci-sync\` skill`,
+    ];
   return [
     "### Description",
     "",
-    `The \`Godot\` ${kind} \`${name}\` was published on ${release.published.slice(0, 10)}, but the CI workflows don't test it yet.`,
-    `They currently test ${tested.map((entry) => `\`${releaseName(entry)}\``).join(", ")}.`,
-    ...(release.newLine ? ["", `This adds the new version line \`${release.version.split(".").slice(0, 2).join(".")}\`, confirm that it should be supported.`] : []),
-    "",
-    `- add \`Godot\` \`${name}\` to the CI matrix, for example with the \`godot-ci-sync\` skill`,
+    ...description,
     "",
     "### Acceptance criteria",
     "",
-    `- [ ] The CI matrix tests \`Godot\` \`${name}\``,
+    `- [ ] The CI matrix tests \`Godot\` \`${name}\` as the only version of the \`${versionLine(release.version)}\` line`,
     "- [ ] All CI checks pass",
     "",
     marker(repository, release),
@@ -155,8 +173,8 @@ function issueBody(repository, release, tested) {
   ].join("\n");
 }
 
-async function createIssue(repository, release, tested) {
-  const title = `Adding \`Godot\` \`${releaseName(release)}\` to the CI matrix`;
+async function createIssue(repository, update, tested) {
+  const title = issueTitle(update);
   const { repository: target } = await graphql(
     `query($owner: String!, $name: String!, $label: String!) {
       repository(owner: $owner, name: $name) {
@@ -177,7 +195,7 @@ async function createIssue(repository, release, tested) {
     {
       repositoryId: target.id,
       title,
-      body: issueBody(repository, release, tested),
+      body: issueBody(repository, update, tested),
       labelIds: target.label ? [target.label.id] : [],
       assigneeIds: assignee ? [assignee.id] : [],
       issueTypeId: target.issueTypes?.nodes.find((type) => type.name === "Task")?.id ?? null,
@@ -197,20 +215,20 @@ async function checkRepository(repository, candidates, createIssues) {
     return `| ${repository} | no Godot workflow | | |`;
   }
   const tested = await readTestedVersions(files);
-  const missing = findMissing(candidates, tested);
+  const updates = planUpdates(candidates, tested);
   const issues = [];
-  for (const release of missing) {
-    const existing = await findExistingIssue(repository, release);
+  for (const update of updates) {
+    const existing = await findExistingIssue(repository, update.release);
     if (existing) {
       issues.push(`${existing.html_url} (exists)`);
     } else if (createIssues) {
-      issues.push(await createIssue(repository, release, tested));
+      issues.push(await createIssue(repository, update, tested));
     } else {
       issues.push("not created");
     }
   }
-  const missingNames = missing.map(releaseName).join(", ") || "none";
-  return `| ${repository} | ${tested.map(releaseName).join(", ")} | ${missingNames} | ${issues.join("<br>")} |`;
+  const updateNames = updates.map((update) => releaseName(update.release)).join(", ") || "none";
+  return `| ${repository} | ${tested.map(releaseName).join(", ")} | ${updateNames} | ${issues.join("<br>")} |`;
 }
 
 async function main() {
@@ -227,7 +245,7 @@ async function main() {
   } else if (!ISSUE_TOKEN) {
     summary("The GitHub App for the issues is not configured, no issue is created.\n");
   }
-  summary("| Repository | Tested | Missing | Issue |");
+  summary("| Repository | Tested | Update to | Issue |");
   summary("| --- | --- | --- | --- |");
   for (const repository of REPOSITORIES) {
     try {

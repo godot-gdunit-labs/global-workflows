@@ -78,27 +78,33 @@ export function normalizeTested(versions) {
   return [...unique.values()].sort(compareReleases);
 }
 
-export function findMissing(candidates, tested) {
+export function versionLine(version) {
+  return line(version);
+}
+
+export function planUpdates(candidates, tested) {
   if (tested.length === 0) {
     return [];
   }
-  const names = new Set(tested.map(releaseName));
   const lowest = tested.reduce((low, entry) => (compareVersions(entry.version, low) < 0 ? entry.version : low), tested[0].version);
-  const missing = [];
+  const updates = [];
   for (const candidate of candidates) {
-    if (names.has(releaseName(candidate)) || compareVersions(candidate.version, lowest) < 0) {
+    if (compareVersions(candidate.version, lowest) < 0) {
       continue;
     }
-    const sameLine = tested.filter((entry) => line(entry.version) === line(candidate.version));
     const isStable = candidate.status === "stable";
-    const comparable = sameLine.filter((entry) => (entry.status === "stable") === isStable);
-    if (comparable.some((entry) => compareReleases(entry, candidate) >= 0)) {
-      continue;
-    }
+    const sameLine = tested.filter((entry) => line(entry.version) === line(candidate.version));
     if (!isStable && sameLine.some((entry) => entry.status === "stable" && compareVersions(entry.version, candidate.version) >= 0)) {
       continue;
     }
-    missing.push({ ...candidate, newLine: sameLine.length === 0 });
+    const replaced = isStable ? sameLine : sameLine.filter((entry) => entry.status !== "stable");
+    if (replaced.some((entry) => compareReleases(entry, candidate) > 0)) {
+      continue;
+    }
+    if (replaced.length === 1 && compareReleases(replaced[0], candidate) === 0) {
+      continue;
+    }
+    updates.push({ release: candidate, replaced: replaced.filter((entry) => compareReleases(entry, candidate) !== 0), newLine: sameLine.length === 0 });
   }
-  return missing;
+  return updates;
 }
