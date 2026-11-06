@@ -4,6 +4,7 @@ Shared GitHub Actions workflows of the [godot-gdunit-labs](https://github.com/go
 
 * [`.github/workflows/formatting-checks.yml`](.github/workflows/formatting-checks.yml) is the shared formatting check for pull requests.
 * [`formatting/`](formatting) holds the rules and scripts of the formatting check.
+* [`.github/workflows/godot-release-check.yml`](.github/workflows/godot-release-check.yml) reports new Godot releases that the CI of a repository doesn't test yet.
 
 The organization profile and community files live in [godot-gdunit-labs/.github](https://github.com/godot-gdunit-labs/.github).
 
@@ -76,3 +77,11 @@ The check is safe for pull requests from forks, because nothing from the checked
 * Actions and npm packages: [Dependabot](.github/dependabot.yml) opens a pull request every week.
 * actionlint, editorconfig-checker, gdstyle, yamllint and the .NET SDK: update the version, and for the binaries the SHA-256 checksum,
   in the `env` section of the workflow.
+
+## Godot Release Check
+
+The release check runs every Monday and looks for new Godot releases that the CI of a repository doesn't test yet.
+For each missing release it creates one issue in that repository, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
+Releases below the lowest Godot version a repository tests are ignored, and an issue is never created twice for the same release.
+
+The checked repositories are listed in the workflow. A manual run from the **Actions** tab can use `dry_run` to only show the result.
