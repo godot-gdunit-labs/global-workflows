@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compareStatus, compareVersions, normalizeTested, normalizeVersion, parseTag, planUpdates, releaseName, selectCandidates } from "./releases.mjs";
+import { compareStatus, compareVersions, normalizeTested, normalizeVersion, parsePlan, parseTag, planMarker, planUpdates, releaseName, selectCandidates, withoutHandled } from "./releases.mjs";
 
 const release = (tag, prerelease, published = "2026-10-01T00:00:00Z") => ({ tag_name: tag, prerelease, draft: false, published_at: published });
 const tested = (...names) => normalizeTested(names.map((name) => parseTag(name)));
@@ -125,4 +125,20 @@ test("planUpdates skips a prerelease that is not newer than the tested one", () 
 
 test("planUpdates plans nothing when nothing is tested", () => {
   assert.deepEqual(planUpdates(selectCandidates(RELEASES), []), []);
+});
+
+test("planMarker and parsePlan round trip the planned releases", () => {
+  const updates = plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.8-dev7"]).map((entry) => ({ release: parseTag(entry.release) }));
+  const marker = planMarker(updates);
+  assert.equal(marker, "<!-- godot-release-plan: 4.7.2-stable,4.8-beta2 -->");
+  assert.deepEqual(parsePlan(`text\n${marker}\n`), ["4.7.2-stable", "4.8-beta2"]);
+  assert.deepEqual(parsePlan("no marker"), []);
+  assert.deepEqual(parsePlan(null), []);
+});
+
+test("withoutHandled drops releases listed in closed issues", () => {
+  const updates = planUpdates(selectCandidates(RELEASES), tested("4.6.2-stable", "4.7.1-stable", "4.8-dev7"));
+  const closed = ["<!-- godot-release-plan: 4.6.3-stable,4.8-beta1 -->", "unrelated"];
+  assert.deepEqual(names(withoutHandled(updates, closed).map((update) => update.release)), ["4.7.2-stable", "4.8-beta2"]);
+  assert.deepEqual(withoutHandled(updates, []).length, 3);
 });

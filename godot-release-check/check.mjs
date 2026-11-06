@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { normalizeTested, planUpdates, releaseName, selectCandidates, versionLine } from "./releases.mjs";
+import { normalizeTested, parsePlan, planMarker, planUpdates, releaseName, selectCandidates, versionLine, withoutHandled } from "./releases.mjs";
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const REPOSITORIES = (process.env.REPOSITORIES ?? "").split(/[\s,]+/).filter(Boolean);
@@ -123,58 +123,48 @@ async function readTestedVersions(files) {
   throw lastError;
 }
 
-function marker(repository, release) {
-  return `<!-- godot-release-check: ${OWNER}/${repository} ${releaseName(release)} -->`;
+const ISSUE_TITLE = "Updating the `Godot` versions of the CI matrix";
+
+function repositoryMarker(repository) {
+  return `<!-- godot-release-check: ${OWNER}/${repository} -->`;
 }
 
-async function findExistingIssue(repository, release) {
-  const query = encodeURIComponent(`repo:${OWNER}/${repository} is:issue in:title "${releaseName(release)}"`);
-  const result = await github(`search/issues?q=${query}&per_page=50`, { token: ISSUE_TOKEN || READ_TOKEN });
-  return result.items.find((issue) => (issue.body ?? "").includes(marker(repository, release)));
+async function findCheckIssues(repository) {
+  const query = encodeURIComponent(`repo:${OWNER}/${repository} is:issue in:title "Updating the Godot versions of the CI matrix"`);
+  const result = await github(`search/issues?q=${query}&per_page=100`, { token: ISSUE_TOKEN || READ_TOKEN });
+  return result.items.filter((issue) => (issue.body ?? "").includes(repositoryMarker(repository)));
 }
 
-function issueTitle(update) {
-  const name = releaseName(update.release);
-  return update.replaced.length === 0
-    ? `Adding \`Godot\` \`${name}\` to the CI matrix`
-    : `Updating the \`Godot\` \`${versionLine(update.release.version)}\` line to \`${name}\` in the CI matrix`;
+function describeUpdate(update) {
+  const name = `\`${releaseName(update.release)}\``;
+  const line = `\`${versionLine(update.release.version)}\``;
+  if (update.replaced.length > 0) {
+    return `- replace ${update.replaced.map((entry) => `\`${releaseName(entry)}\``).join(", ")} with ${name}`;
+  }
+  return update.newLine ? `- add ${name} as the new version line ${line}, confirm that it should be supported` : `- add ${name}`;
 }
 
-function issueBody(repository, update, tested) {
-  const { release, replaced } = update;
-  const name = releaseName(release);
-  const list = (entries) => entries.map((entry) => `\`${releaseName(entry)}\``).join(", ");
-  const description = replaced.length === 0
-    ? [
-      `The \`Godot\` release \`${name}\` was published on ${release.published.slice(0, 10)}, but the CI workflows don't test it yet.`,
-      `They currently test ${list(tested)}.`,
-      ...(update.newLine ? ["", `This adds the new version line \`${versionLine(release.version)}\`, confirm that it should be supported.`] : []),
-      "",
-      `- add \`Godot\` \`${name}\` to the CI matrix, for example with the \`godot-ci-sync\` skill`,
-    ]
-    : [
-      `The CI workflows test ${list(replaced)} of the \`Godot\` \`${versionLine(release.version)}\` line.`,
-      `Only the latest release of a version line is tested, which is \`${name}\`, published on ${release.published.slice(0, 10)}.`,
-      "",
-      `- replace ${list(replaced)} with \`${name}\` in the CI matrix, for example with the \`godot-ci-sync\` skill`,
-    ];
+function issueBody(repository, updates, tested) {
   return [
     "### Description",
     "",
-    ...description,
+    `New \`Godot\` releases are available that the CI workflows don't test yet, they currently test ${tested.map((entry) => `\`${releaseName(entry)}\``).join(", ")}.`,
+    "Only the latest release of each version line is tested, for example with the `godot-ci-sync` skill:",
+    "",
+    ...updates.map(describeUpdate),
     "",
     "### Acceptance criteria",
     "",
-    `- [ ] The CI matrix tests \`Godot\` \`${name}\` as the only version of the \`${versionLine(release.version)}\` line`,
+    ...updates.map((update) => `- [ ] The CI matrix tests \`Godot\` \`${releaseName(update.release)}\` as the only version of the \`${versionLine(update.release.version)}\` line`),
     "- [ ] All CI checks pass",
     "",
-    marker(repository, release),
+    repositoryMarker(repository),
+    planMarker(updates),
     "",
   ].join("\n");
 }
 
-async function createIssue(repository, update, tested) {
-  const title = issueTitle(update);
+async function createIssue(repository, body) {
   const { repository: target } = await graphql(
     `query($owner: String!, $name: String!, $label: String!) {
       repository(owner: $owner, name: $name) {
@@ -194,8 +184,8 @@ async function createIssue(repository, update, tested) {
     }`,
     {
       repositoryId: target.id,
-      title,
-      body: issueBody(repository, update, tested),
+      title: ISSUE_TITLE,
+      body,
       labelIds: target.label ? [target.label.id] : [],
       assigneeIds: assignee ? [assignee.id] : [],
       issueTypeId: target.issueTypes?.nodes.find((type) => type.name === "Task")?.id ?? null,
@@ -204,9 +194,30 @@ async function createIssue(repository, update, tested) {
   await github(`repos/${OWNER}/${repository}/issues/${created.issue.number}`, {
     token: ISSUE_TOKEN,
     method: "PATCH",
-    body: { title: `${ISSUE_PREFIX}-${created.issue.number}: ${title}` },
+    body: { title: `${ISSUE_PREFIX}-${created.issue.number}: ${ISSUE_TITLE}` },
   });
-  return created.issue.url;
+  return `${created.issue.url} (created)`;
+}
+
+async function syncIssue(repository, updates, tested, createIssues) {
+  const issues = await findCheckIssues(repository);
+  const open = issues.find((issue) => issue.state === "open");
+  const pending = withoutHandled(updates, issues.filter((issue) => issue.state === "closed").map((issue) => issue.body));
+  if (pending.length === 0) {
+    return open ? `${open.html_url} (up to date)` : "";
+  }
+  if (open && parsePlan(open.body).join(",") === pending.map((update) => releaseName(update.release)).join(",")) {
+    return `${open.html_url} (up to date)`;
+  }
+  if (!createIssues) {
+    return open ? `${open.html_url} (not updated)` : "not created";
+  }
+  const body = issueBody(repository, pending, tested);
+  if (open) {
+    await github(`repos/${OWNER}/${repository}/issues/${open.number}`, { token: ISSUE_TOKEN, method: "PATCH", body: { body } });
+    return `${open.html_url} (updated)`;
+  }
+  return createIssue(repository, body);
 }
 
 async function checkRepository(repository, candidates, createIssues) {
@@ -216,19 +227,9 @@ async function checkRepository(repository, candidates, createIssues) {
   }
   const tested = await readTestedVersions(files);
   const updates = planUpdates(candidates, tested);
-  const issues = [];
-  for (const update of updates) {
-    const existing = await findExistingIssue(repository, update.release);
-    if (existing) {
-      issues.push(`${existing.html_url} (exists)`);
-    } else if (createIssues) {
-      issues.push(await createIssue(repository, update, tested));
-    } else {
-      issues.push("not created");
-    }
-  }
+  const issue = updates.length > 0 ? await syncIssue(repository, updates, tested, createIssues) : "";
   const updateNames = updates.map((update) => releaseName(update.release)).join(", ") || "none";
-  return `| ${repository} | ${tested.map(releaseName).join(", ")} | ${updateNames} | ${issues.join("<br>")} |`;
+  return `| ${repository} | ${tested.map(releaseName).join(", ")} | ${updateNames} | ${issue} |`;
 }
 
 async function main() {
