@@ -76,15 +76,15 @@ jobs:
           mkdir -p "$TOOLS_DIR"
           cd "$TOOLS_DIR"
           actionlint_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
-          curl -fsSLo actionlint.tar.gz "${actionlint_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o actionlint.tar.gz "${actionlint_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
           ec_url="https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EDITORCONFIG_CHECKER_VERSION}"
-          curl -fsSLo ec.tar.gz "${ec_url}/editorconfig-checker-linux-amd64.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o ec.tar.gz "${ec_url}/editorconfig-checker-linux-amd64.tar.gz"
           echo "${EDITORCONFIG_CHECKER_SHA256}  ec.tar.gz" | sha256sum -c -
           tar -xzf ec.tar.gz editorconfig-checker
           gdstyle_url="https://github.com/atelico/gdstyle/releases/download/v${GDSTYLE_VERSION}"
-          curl -fsSLo gdstyle.tar.gz "${gdstyle_url}/gdstyle-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o gdstyle.tar.gz "${gdstyle_url}/gdstyle-x86_64-unknown-linux-gnu.tar.gz"
           echo "${GDSTYLE_SHA256}  gdstyle.tar.gz" | sha256sum -c -
           tar -xzf gdstyle.tar.gz gdstyle
           python3 -m venv yamllint-venv
