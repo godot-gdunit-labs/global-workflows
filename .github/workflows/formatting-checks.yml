@@ -69,24 +69,36 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
 
+      - name: 'Restore the formatting tool downloads'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/formatting-downloads
+          key: formatting-tools-${{ runner.os }}-${{ env.ACTIONLINT_SHA256 }}-${{ env.EDITORCONFIG_CHECKER_SHA256 }}-${{ env.GDSTYLE_SHA256 }}
+
       - name: 'Install the formatting tools'
         run: |
           set -euo pipefail
           npm ci --prefix "$CENTRAL_DIR" --ignore-scripts --no-audit --no-fund
-          mkdir -p "$TOOLS_DIR"
+          downloads_dir="$RUNNER_TEMP/formatting-downloads"
+          mkdir -p "$TOOLS_DIR" "$downloads_dir"
+          # Downloads a tool archive unless it was restored from the cache, then verifies its checksum
+          fetch() {
+            local file="$downloads_dir/$1" url="$2" sha256="$3"
+            if [[ ! -f "$file" ]]; then
+              curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o "$file" "$url"
+            fi
+            echo "${sha256}  ${file}" | sha256sum -c -
+          }
           cd "$TOOLS_DIR"
           actionlint_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
-          curl -fsSLo actionlint.tar.gz "${actionlint_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
-          tar -xzf actionlint.tar.gz actionlint
+          fetch actionlint.tar.gz "${actionlint_url}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" "$ACTIONLINT_SHA256"
+          tar -xzf "$downloads_dir/actionlint.tar.gz" actionlint
           ec_url="https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EDITORCONFIG_CHECKER_VERSION}"
-          curl -fsSLo ec.tar.gz "${ec_url}/editorconfig-checker-linux-amd64.tar.gz"
-          echo "${EDITORCONFIG_CHECKER_SHA256}  ec.tar.gz" | sha256sum -c -
-          tar -xzf ec.tar.gz editorconfig-checker
+          fetch ec.tar.gz "${ec_url}/editorconfig-checker-linux-amd64.tar.gz" "$EDITORCONFIG_CHECKER_SHA256"
+          tar -xzf "$downloads_dir/ec.tar.gz" editorconfig-checker
           gdstyle_url="https://github.com/atelico/gdstyle/releases/download/v${GDSTYLE_VERSION}"
-          curl -fsSLo gdstyle.tar.gz "${gdstyle_url}/gdstyle-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${GDSTYLE_SHA256}  gdstyle.tar.gz" | sha256sum -c -
-          tar -xzf gdstyle.tar.gz gdstyle
+          fetch gdstyle.tar.gz "${gdstyle_url}/gdstyle-x86_64-unknown-linux-gnu.tar.gz" "$GDSTYLE_SHA256"
+          tar -xzf "$downloads_dir/gdstyle.tar.gz" gdstyle
           python3 -m venv yamllint-venv
           yamllint-venv/bin/pip install --quiet "yamllint==${YAMLLINT_VERSION}"
           {
