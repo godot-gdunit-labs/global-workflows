@@ -12,6 +12,6 @@
     "globals": "17.14.0",
     "jsonc-parser": "3.3.1",
     "markdownlint": "0.42.0",
-    "minimatch": "11.0.3"
+    "minimatch": "11.0.4"
   }
 }
