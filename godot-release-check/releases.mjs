@@ -124,3 +124,9 @@ export function withoutHandled(updates, closedBodies) {
   const handled = new Set(closedBodies.flatMap(parsePlan));
   return updates.filter((update) => !handled.has(releaseName(update.release)));
 }
+
+export function expectedTested(tested, updates) {
+  const removed = new Set(updates.flatMap((update) => update.replaced.map(releaseName)));
+  const kept = tested.filter((entry) => !removed.has(releaseName(entry)));
+  return normalizeTested([...kept, ...updates.map((update) => update.release)]);
+}

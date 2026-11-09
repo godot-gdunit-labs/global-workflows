@@ -85,4 +85,13 @@ For each version line, such as `4.7`, only the latest release should be tested, 
 It keeps one open issue per repository that lists all needed updates, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
 Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again.
 
-The checked repositories are listed in the workflow. A manual run from the **Actions** tab can use `dry_run` to only show the result.
+For each issue it also opens a pull request on the branch `TASK-<issue>` that updates the CI matrix and the supported Godot versions of the README.
+An LLM writes the changes as exact search and replace edits, which are rejected if they change anything else than Godot versions,
+such as steps, actions, expressions or secrets. The tested versions are then read back from the changed workflows and must match the plan.
+When the plan changes, the pull request is updated, unless its branch has commits that were not made by the check.
+A closed pull request is not opened again for the same plan.
+
+The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows** with read and write access.
+
+The checked repositories are listed in the workflow.
+A manual run from the **Actions** tab can use `dry_run` to only show the result and the verified edits in the log.
