@@ -82,8 +82,18 @@ The check is safe for pull requests from forks, because nothing from the checked
 
 The release check runs every Monday and looks for new Godot releases that the CI of a repository doesn't test yet.
 For each version line, such as `4.7`, only the latest release should be tested, for example `4.7.2` instead of `4.7` and `4.7.1`.
-It keeps one open issue per repository that lists all needed updates, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
-Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again.
+It keeps one open issue per repository that lists all needed updates.
+Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again,
+unless the issue triage of the repository closed it with the `triage:failed` label.
+
+The issue follows the task template of the repository, so it passes the issue triage:
+
+* The issue form or Markdown template named `Task` is filled like the "New issue" page does, every required field gets a value.
+  The check fails instead of creating an issue when a required field can't be filled.
+* The labels, assignees, issue type and project of the template are applied, the generic `API` label is replaced by the `CI` label.
+* The issue is created with its type in one step, and the title gets the ID prefix of the template afterwards.
+* Repositories without a task template get a description and acceptance criteria.
+* An open issue is rewritten when its body differs from the generated one.
 
 For each issue it also opens a pull request on the branch `TASK-<issue>` that updates the CI matrix and the supported Godot versions of the README.
 An LLM writes the changes as exact search and replace edits, which are rejected if they change anything else than Godot versions,

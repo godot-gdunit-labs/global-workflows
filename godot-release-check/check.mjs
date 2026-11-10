@@ -1,6 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { applyEdits, parsePullMarker, pullMarker } from "./edits.mjs";
-import { expectedTested, normalizeTested, parsePlan, planMarker, planUpdates, releaseName, selectCandidates, versionLine, withoutHandled } from "./releases.mjs";
+import { parseTemplate, renderIssueBody, selectTaskTemplate, templateLabels, templatePrefix } from "./templates.mjs";
+import { expectedTested, normalizeTested, planMarker, planUpdates, releaseName, selectCandidates, versionLine, withoutHandled } from "./releases.mjs";
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const REPOSITORIES = (process.env.REPOSITORIES ?? "").split(/[\s,]+/).filter(Boolean);
@@ -11,6 +12,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN ?? "";
 const ISSUE_ASSIGNEE = process.env.ISSUE_ASSIGNEE ?? "";
 const ISSUE_LABEL = process.env.ISSUE_LABEL || "task";
 const ISSUE_PREFIX = process.env.ISSUE_PREFIX || "TASK";
+const TRIAGE_FAILED_LABEL = process.env.TRIAGE_FAILED_LABEL || "triage:failed";
 const PULL_LABELS = (process.env.PULL_LABELS ?? "").split(",").map((label) => label.trim()).filter(Boolean);
 const DRY_RUN = process.env.DRY_RUN === "true";
 const RELEASES_REPOSITORY = "godotengine/godot-builds";
@@ -240,75 +242,119 @@ function describeUpdate(update) {
   return update.newLine ? `- add ${name} as the new version line ${line}, confirm that it should be supported` : `- add ${name}`;
 }
 
-function issueBody(repository, updates, tested) {
-  return [
-    "### Description",
-    "",
-    `New \`Godot\` releases are available that the CI workflows don't test yet, they currently test ${tested.map((entry) => `\`${releaseName(entry)}\``).join(", ")}.`,
-    "Only the latest release of each version line is tested, for example with the `godot-ci-sync` skill:",
-    "",
-    ...updates.map(describeUpdate),
-    "",
-    "### Acceptance criteria",
-    "",
-    ...updates.map((update) => `- [ ] The CI matrix tests \`Godot\` \`${releaseName(update.release)}\` as the only version of the \`${versionLine(update.release.version)}\` line`),
-    "- [ ] All CI checks pass",
-    "",
-    repositoryMarker(repository),
-    planMarker(updates),
-    "",
-  ].join("\n");
+function issueBody(repository, updates, tested, template) {
+  const content = {
+    description: [
+      `New \`Godot\` releases are available that the CI workflows don't test yet, they currently test ${tested.map((entry) => `\`${releaseName(entry)}\``).join(", ")}.`,
+      "Only the latest release of each version line is tested, a pull request with the update is opened automatically:",
+      "",
+      ...updates.map(describeUpdate),
+    ].join("\n"),
+    criteria: [
+      ...updates.map((update) => `- [ ] The CI matrix tests \`Godot\` \`${releaseName(update.release)}\` as the only version of the \`${versionLine(update.release.version)}\` line`),
+      "- [ ] All CI checks pass",
+    ].join("\n"),
+  };
+  return [renderIssueBody(template, content), "", repositoryMarker(repository), planMarker(updates), ""].join("\n");
 }
 
-async function createIssue(repository, body) {
+async function loadIssueTemplate(repository) {
+  const entries = (await github(`repos/${OWNER}/${repository}/contents/.github/ISSUE_TEMPLATE`, { optional: true })) ?? [];
+  const templates = [];
+  for (const entry of entries.filter((item) => item.type === "file" && /\.(ya?ml|md)$/i.test(item.name) && !/^config\.ya?ml$/i.test(item.name))) {
+    templates.push(parseTemplate(entry.path, await loadFile(repository, entry.path)));
+  }
+  return selectTaskTemplate(templates);
+}
+
+async function addToProject(issueId, project) {
+  const match = /^([^/]+)\/(\d+)$/.exec(project);
+  if (!match) {
+    return;
+  }
+  try {
+    const { organization } = await graphql("query($login: String!, $number: Int!) { organization(login: $login) { projectV2(number: $number) { id } } }", {
+      login: match[1],
+      number: Number(match[2]),
+    });
+    await graphql("mutation($projectId: ID!, $contentId: ID!) { addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) { item { id } } }", {
+      projectId: organization.projectV2.id,
+      contentId: issueId,
+    });
+  } catch (error) {
+    console.log(`::warning::The issue could not be added to the project ${project}: ${error.message}`);
+  }
+}
+
+async function createIssue(repository, body, template) {
+  const repositoryLabels = (await github(`repos/${OWNER}/${repository}/labels?per_page=100`, { token: BOT_TOKEN })).map((label) => label.name);
+  const labels = templateLabels(template, repositoryLabels, ISSUE_LABEL);
+  const assignees = template?.assignees.length ? template.assignees : [ISSUE_ASSIGNEE].filter(Boolean);
+  const typeName = (template?.type || "Task").toLowerCase();
   const { repository: target } = await graphql(
-    `query($owner: String!, $name: String!, $label: String!) {
+    `query($owner: String!, $name: String!) {
       repository(owner: $owner, name: $name) {
         id
         issueTypes(first: 20) { nodes { id name } }
-        label(name: $label) { id }
+        labels(first: 100) { nodes { id name } }
       }
     }`,
-    { owner: OWNER, name: repository, label: ISSUE_LABEL },
+    { owner: OWNER, name: repository },
   );
-  const assignee = ISSUE_ASSIGNEE ? (await graphql("query($login: String!) { user(login: $login) { id } }", { login: ISSUE_ASSIGNEE })).user : null;
+  const assigneeIds = [];
+  for (const login of assignees) {
+    const { user } = await graphql("query($login: String!) { user(login: $login) { id } }", { login });
+    if (user) {
+      assigneeIds.push(user.id);
+    }
+  }
   const { createIssue: created } = await graphql(
     `mutation($repositoryId: ID!, $title: String!, $body: String, $labelIds: [ID!], $assigneeIds: [ID!], $issueTypeId: ID) {
       createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds, assigneeIds: $assigneeIds, issueTypeId: $issueTypeId }) {
-        issue { number url }
+        issue { id number url }
       }
     }`,
     {
       repositoryId: target.id,
       title: TITLE,
       body,
-      labelIds: target.label ? [target.label.id] : [],
-      assigneeIds: assignee ? [assignee.id] : [],
-      issueTypeId: target.issueTypes?.nodes.find((type) => type.name === "Task")?.id ?? null,
+      labelIds: target.labels.nodes.filter((label) => labels.includes(label.name)).map((label) => label.id),
+      assigneeIds,
+      issueTypeId: target.issueTypes?.nodes.find((type) => type.name.toLowerCase() === typeName)?.id ?? null,
     },
   );
+  const title = `${templatePrefix(template, ISSUE_PREFIX)}-${created.issue.number}: ${TITLE}`;
   await github(`repos/${OWNER}/${repository}/issues/${created.issue.number}`, {
     token: BOT_TOKEN,
     method: "PATCH",
-    body: { title: `${ISSUE_PREFIX}-${created.issue.number}: ${TITLE}` },
+    body: { title },
   });
-  return { text: `${created.issue.url} (created)`, number: created.issue.number };
+  for (const project of template?.projects ?? []) {
+    await addToProject(created.issue.id, project);
+  }
+  return { text: `${created.issue.url} (created)`, number: created.issue.number, title };
+}
+
+function sameText(left, right) {
+  const normalize = (text) => (text ?? "").replace(/\r\n/g, "\n").trim();
+  return normalize(left) === normalize(right);
 }
 
 async function syncIssue(repository, issues, pending, tested, write) {
   const open = issues.find((issue) => issue.state === "open");
-  if (open && parsePlan(open.body).join(",") === pending.map((update) => releaseName(update.release)).join(",")) {
-    return { text: `${open.html_url} (up to date)`, number: open.number };
+  const template = await loadIssueTemplate(repository);
+  const body = issueBody(repository, pending, tested, template);
+  if (open && sameText(open.body, body)) {
+    return { text: `${open.html_url} (up to date)`, number: open.number, title: open.title };
   }
   if (!write) {
-    return { text: open ? `${open.html_url} (not updated)` : "not created", number: open?.number };
+    return { text: open ? `${open.html_url} (not updated)` : "not created", number: open?.number, title: open?.title };
   }
-  const body = issueBody(repository, pending, tested);
   if (open) {
     await github(`repos/${OWNER}/${repository}/issues/${open.number}`, { token: BOT_TOKEN, method: "PATCH", body: { body } });
-    return { text: `${open.html_url} (updated)`, number: open.number };
+    return { text: `${open.html_url} (updated)`, number: open.number, title: open.title };
   }
-  return createIssue(repository, body);
+  return createIssue(repository, body, template);
 }
 
 function pullBody(repository, issueNumber, updates, plan, sha) {
@@ -368,9 +414,10 @@ async function labelPullRequest(repository, number) {
   }
 }
 
-async function syncPullRequest(repository, issueNumber, files, pending, tested) {
+async function syncPullRequest(repository, issue, files, pending, tested) {
+  const issueNumber = issue.number;
   const base = `repos/${OWNER}/${repository}`;
-  const branch = `${ISSUE_PREFIX}-${issueNumber}`;
+  const branch = /^([A-Z][A-Z0-9]*-\d+):/.exec(issue.title ?? "")?.[1] ?? `${ISSUE_PREFIX}-${issueNumber}`;
   const plan = pending.map((update) => releaseName(update.release)).join(",");
   const pulls = await github(`${base}/pulls?state=all&head=${OWNER}:${branch}&per_page=100`, { token: BOT_TOKEN });
   const open = pulls.find((pull) => pull.state === "open");
@@ -420,7 +467,7 @@ async function syncChanges(repository, issues, files, pending, tested, write) {
     const readme = await loadReadme(repository);
     const editable = readme ? [...files, readme] : files;
     if (write && issue.number) {
-      pull = await syncPullRequest(repository, issue.number, editable, pending, tested);
+      pull = await syncPullRequest(repository, issue, editable, pending, tested);
     } else if (DRY_RUN) {
       pull = await previewEdits(editable, pending, tested);
     }
@@ -441,7 +488,8 @@ async function checkRepository(repository, candidates, write) {
   const updates = planUpdates(candidates, tested);
   const updateNames = updates.map((update) => releaseName(update.release)).join(", ") || "none";
   const issues = updates.length > 0 ? await findCheckIssues(repository) : [];
-  const pending = withoutHandled(updates, issues.filter((issue) => issue.state === "closed").map((issue) => issue.body));
+  const handled = issues.filter((issue) => issue.state === "closed" && !issue.labels.some((label) => label.name === TRIAGE_FAILED_LABEL));
+  const pending = withoutHandled(updates, handled.map((issue) => issue.body));
   const changes = pending.length > 0 ? await syncChanges(repository, issues, files, pending, tested, write) : " | ";
   return `| ${repository} | ${tested.map(releaseName).join(", ")} | ${updateNames} | ${changes} |`;
 }
