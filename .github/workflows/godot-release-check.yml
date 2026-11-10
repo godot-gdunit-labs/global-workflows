@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LLM_PROVIDER: 'opencode'
+  LLM_PROVIDER: 'opencode-go'
   LLM_MODEL: 'gpt-6-luna'
   REPOSITORIES: 'gdUnit4,gdUnit4Net,gdUnit4NetExamples,gdUnit4-action'
   ISSUE_ASSIGNEE: 'MikeSchulze'

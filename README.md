@@ -102,7 +102,8 @@ When the plan changes, the pull request is updated, unless its branch has commit
 A closed pull request is not opened again for the same plan.
 
 The LLM is set by `LLM_PROVIDER` and `LLM_MODEL` in the workflow, its key is the secret `LLM_API_KEY`.
-The provider `opencode` uses the OpenCode Zen responses API, `gemini` the Gemini API, `LLM_BASE_URL` can point to another endpoint.
+The provider `opencode-go` uses the responses API of the OpenCode Go subscription, `opencode-zen` the one of OpenCode Zen and `gemini` the Gemini API.
+`LLM_BASE_URL` can point to another endpoint, and `LLM_REASONING` sets the reasoning effort of the responses API, `low` by default.
 
 The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows**
 and the organization permission **Projects** with read and write access.

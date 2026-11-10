@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { applyEdits, parsePullMarker, pullMarker } from "./edits.mjs";
 import { llmAnswer, llmRequest } from "./llm.mjs";
@@ -6,7 +7,9 @@ import { expectedTested, normalizeTested, planMarker, planUpdates, releaseName, 
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const REPOSITORIES = (process.env.REPOSITORIES ?? "").split(/[\s,]+/).filter(Boolean);
-const LLM_PROVIDER = process.env.LLM_PROVIDER || "opencode";
+const LLM_PROVIDER = process.env.LLM_PROVIDER || "opencode-go";
+const LLM_REASONING = process.env.LLM_REASONING ?? "low";
+const LLM_SESSION = `godot-release-check-${process.env.GITHUB_RUN_ID || randomUUID()}`;
 const LLM_MODEL = process.env.LLM_MODEL || "gpt-6-luna";
 const LLM_BASE_URL = process.env.LLM_BASE_URL ?? "";
 const LLM_API_KEY = process.env.LLM_API_KEY ?? "";
@@ -78,7 +81,7 @@ async function loadReadme(repository) {
 }
 
 async function generate(prompt, name, schema) {
-  const request = llmRequest({ provider: LLM_PROVIDER, baseUrl: LLM_BASE_URL, model: LLM_MODEL, apiKey: LLM_API_KEY, prompt, name, schema });
+  const request = llmRequest({ provider: LLM_PROVIDER, baseUrl: LLM_BASE_URL, model: LLM_MODEL, apiKey: LLM_API_KEY, prompt, name, schema, sessionId: LLM_SESSION, reasoning: LLM_REASONING });
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

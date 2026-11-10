@@ -8,21 +8,30 @@ const SCHEMA = {
   required: ["versions"],
   additionalProperties: false,
 };
-const OPTIONS = { model: "gpt-6-luna", apiKey: "key", prompt: "List the versions.", name: "tested_versions", schema: SCHEMA };
+const OPTIONS = { model: "gpt-6-luna", apiKey: "key", prompt: "List the versions.", name: "tested_versions", schema: SCHEMA, sessionId: "run-1", reasoning: "low" };
 
-test("llmRequest builds an OpenCode Zen responses request with a strict JSON schema", () => {
-  const request = llmRequest({ ...OPTIONS, provider: "opencode" });
-  assert.equal(request.url, "https://opencode.ai/zen/v1/responses");
+test("llmRequest builds an OpenCode Go responses request with a strict JSON schema and a session", () => {
+  const request = llmRequest({ ...OPTIONS, provider: "opencode-go" });
+  assert.equal(request.url, "https://opencode.ai/inference/go/openai/v1/responses");
   assert.equal(request.headers.authorization, "Bearer key");
+  assert.equal(request.headers["x-opencode-session"], "run-1");
+  assert.equal(request.headers["user-agent"], "godot-release-check");
   assert.deepEqual(request.body, {
     model: "gpt-6-luna",
     input: "List the versions.",
     text: { format: { type: "json_schema", name: "tested_versions", schema: SCHEMA, strict: true } },
+    reasoning: { effort: "low" },
   });
 });
 
+test("llmRequest uses the OpenCode Zen endpoint and leaves the reasoning effort out when it is empty", () => {
+  const request = llmRequest({ ...OPTIONS, provider: "opencode-zen", reasoning: "" });
+  assert.equal(request.url, "https://opencode.ai/inference/openai/v1/responses");
+  assert.equal(request.body.reasoning, undefined);
+});
+
 test("llmRequest uses a configured base URL", () => {
-  assert.equal(llmRequest({ ...OPTIONS, provider: "opencode", baseUrl: "https://proxy.example/v1/" }).url, "https://proxy.example/v1/responses");
+  assert.equal(llmRequest({ ...OPTIONS, provider: "opencode-go", baseUrl: "https://proxy.example/v1/" }).url, "https://proxy.example/v1/responses");
 });
 
 test("llmRequest converts the schema for Gemini", () => {
@@ -48,13 +57,13 @@ test("llmAnswer reads the JSON text of a responses answer", () => {
       { type: "message", content: [{ type: "output_text", text: '{"versions":[{"version":"4.7"}]}' }] },
     ],
   };
-  assert.deepEqual(llmAnswer("opencode", result), { versions: [{ version: "4.7" }] });
-  assert.deepEqual(llmAnswer("opencode", { output_text: '{"versions":[]}' }), { versions: [] });
+  assert.deepEqual(llmAnswer("opencode-go", result), { versions: [{ version: "4.7" }] });
+  assert.deepEqual(llmAnswer("opencode-go", { output_text: '{"versions":[]}' }), { versions: [] });
 });
 
 test("llmAnswer reports refusals and empty answers", () => {
-  assert.throws(() => llmAnswer("opencode", { output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] }), /refused the request: no/);
-  assert.throws(() => llmAnswer("opencode", { status: "incomplete", output: [] }), /no text, status incomplete/);
+  assert.throws(() => llmAnswer("opencode-go", { output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }] }), /refused the request: no/);
+  assert.throws(() => llmAnswer("opencode-go", { status: "incomplete", output: [] }), /no text, status incomplete/);
 });
 
 test("llmAnswer reads the JSON text of a Gemini answer", () => {
