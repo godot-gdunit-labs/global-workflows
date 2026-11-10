@@ -1,11 +1,14 @@
 import { appendFileSync } from "node:fs";
 import { applyEdits, parsePullMarker, pullMarker } from "./edits.mjs";
+import { llmAnswer, llmRequest } from "./llm.mjs";
 import { parseTemplate, renderIssueBody, selectTaskTemplate, templateLabels, templatePrefix } from "./templates.mjs";
 import { expectedTested, normalizeTested, planMarker, planUpdates, releaseName, selectCandidates, versionLine, withoutHandled } from "./releases.mjs";
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const REPOSITORIES = (process.env.REPOSITORIES ?? "").split(/[\s,]+/).filter(Boolean);
-const LLM_MODEL = process.env.LLM_MODEL || "gemini-3.5-flash";
+const LLM_PROVIDER = process.env.LLM_PROVIDER || "opencode";
+const LLM_MODEL = process.env.LLM_MODEL || "gpt-6-luna";
+const LLM_BASE_URL = process.env.LLM_BASE_URL ?? "";
 const LLM_API_KEY = process.env.LLM_API_KEY ?? "";
 const READ_TOKEN = process.env.GITHUB_TOKEN ?? "";
 const BOT_TOKEN = process.env.BOT_TOKEN ?? "";
@@ -74,25 +77,21 @@ async function loadReadme(repository) {
   return content && /godot/i.test(content) && /(img\.shields\.io\/badge\/godot|compatib)/i.test(content) ? { path: "README.md", content } : null;
 }
 
-async function generate(prompt, schema) {
-  const request = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: schema },
-  };
+async function generate(prompt, name, schema) {
+  const request = llmRequest({ provider: LLM_PROVIDER, baseUrl: LLM_BASE_URL, model: LLM_MODEL, apiKey: LLM_API_KEY, prompt, name, schema });
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:generateContent`, {
+      const response = await fetch(request.url, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": LLM_API_KEY },
-        body: JSON.stringify(request),
-        signal: AbortSignal.timeout(120_000),
+        headers: request.headers,
+        body: JSON.stringify(request.body),
+        signal: AbortSignal.timeout(180_000),
       });
       if (!response.ok) {
         throw new Error(`LLM request failed with ${response.status}: ${await response.text()}`);
       }
-      const result = await response.json();
-      return JSON.parse(result.candidates[0].content.parts[0].text);
+      return llmAnswer(LLM_PROVIDER, await response.json());
     } catch (error) {
       lastError = error;
       if (attempt < 3) {
@@ -122,20 +121,26 @@ function buildTestedPrompt(files) {
 }
 
 const TESTED_SCHEMA = {
-  type: "OBJECT",
+  type: "object",
   properties: {
     versions: {
-      type: "ARRAY",
-      items: { type: "OBJECT", properties: { version: { type: "STRING" }, status: { type: "STRING" } }, required: ["version", "status"] },
+      type: "array",
+      items: {
+        type: "object",
+        properties: { version: { type: "string" }, status: { type: "string" } },
+        required: ["version", "status"],
+        additionalProperties: false,
+      },
     },
   },
   required: ["versions"],
+  additionalProperties: false,
 };
 
 async function readTestedVersions(files) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const tested = normalizeTested((await generate(buildTestedPrompt(files), TESTED_SCHEMA)).versions ?? []);
+    const tested = normalizeTested((await generate(buildTestedPrompt(files), "tested_versions", TESTED_SCHEMA)).versions ?? []);
     if (tested.length > 0) {
       return tested;
     }
@@ -185,18 +190,20 @@ function buildEditPrompt(files, updates, expected, feedback) {
 }
 
 const EDIT_SCHEMA = {
-  type: "OBJECT",
+  type: "object",
   properties: {
     edits: {
-      type: "ARRAY",
+      type: "array",
       items: {
-        type: "OBJECT",
-        properties: { path: { type: "STRING" }, search: { type: "STRING" }, replace: { type: "STRING" } },
+        type: "object",
+        properties: { path: { type: "string" }, search: { type: "string" }, replace: { type: "string" } },
         required: ["path", "search", "replace"],
+        additionalProperties: false,
       },
     },
   },
   required: ["edits"],
+  additionalProperties: false,
 };
 
 async function editFiles(files, updates, tested) {
@@ -205,7 +212,7 @@ async function editFiles(files, updates, tested) {
   let feedback = "";
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const { edits } = await generate(buildEditPrompt(files, updates, expected, feedback), EDIT_SCHEMA);
+      const { edits } = await generate(buildEditPrompt(files, updates, expected, feedback), "file_edits", EDIT_SCHEMA);
       const changed = applyEdits(files, edits ?? []);
       const workflows = files.filter(isWorkflow).map((file) => changed.find((entry) => entry.path === file.path) ?? file);
       const result = await readTestedVersions(workflows);
