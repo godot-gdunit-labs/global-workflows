@@ -11,3 +11,9 @@ updates:
     schedule:
       interval: 'weekly'
       day: 'sunday'
+
+  - package-ecosystem: npm
+    directory: '/godot-release-check'
+    schedule:
+      interval: 'weekly'
+      day: 'sunday'

@@ -82,7 +82,39 @@ The check is safe for pull requests from forks, because nothing from the checked
 
 The release check runs every Monday and looks for new Godot releases that the CI of a repository doesn't test yet.
 For each version line, such as `4.7`, only the latest release should be tested, for example `4.7.2` instead of `4.7` and `4.7.1`.
-It keeps one open issue per repository that lists all needed updates, so the CI matrix can be updated, for example with the `godot-ci-sync` skill.
-Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again.
+It keeps one open issue per repository that lists all needed updates.
+Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again,
+unless the issue triage of the repository closed it with the `triage:failed` label.
 
-The checked repositories are listed in the workflow. A manual run from the **Actions** tab can use `dry_run` to only show the result.
+The issue follows the task template of the repository, so it passes the issue triage:
+
+* The issue form or Markdown template named `Task` is filled like the "New issue" page does, every required field gets a value.
+  The check fails instead of creating an issue when a required field can't be filled.
+* The labels, assignees, issue type and project of the template are applied, the generic `API` label is replaced by the `CI` label.
+* The issue is created with its type in one step, and the title gets the ID prefix of the template afterwards.
+* Repositories without a task template get a description and acceptance criteria.
+* An open issue is rewritten when its body differs from the generated one.
+
+The tested versions are read from the workflow files by a script, no LLM is involved:
+
+* A `godot-version` key sets them as a matrix list (`['4.7', '4.7.1']`), a matrix `include` entry or a step input (`'4.8'`),
+  a `godot-versions` key as a JSON list passed to a reusable workflow (`'["4.5.1", "4.6.2"]'`).
+* The status comes from a `godot-status` or `godot-status-version` key of the same mapping, it is stable without one.
+* Expressions such as `${{ inputs.godot-version }}` and commented out lines are ignored.
+* Prereleases are only planned for repositories that already test one.
+
+For each issue it also opens a pull request on the branch `TASK-<issue>` that updates these values, it never adds or removes lines:
+
+* In a stable list, the replaced patches of a line are swapped for its latest release, and a new version line is added in version order.
+* An `include` entry or step input is moved to the latest release of its own line, together with its status.
+* An update without a list or entry to change, such as a new version line in a repository without a stable list, is listed in the issue as a manual change.
+* The README is not changed.
+
+When the plan changes, the pull request is updated, unless its branch has commits that were not made by the check.
+A closed pull request is not opened again for the same plan.
+
+The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows**
+and the organization permission **Projects** with read and write access.
+
+The checked repositories are listed in the workflow.
+A manual run from the **Actions** tab can use `dry_run` to only show the result and the changes in the log.

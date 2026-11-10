@@ -87,12 +87,18 @@ export function planUpdates(candidates, tested) {
     return [];
   }
   const lowest = tested.reduce((low, entry) => (compareVersions(entry.version, low) < 0 ? entry.version : low), tested[0].version);
+  // A repository that tests no prerelease has no place for one, so prereleases are only planned
+  // for repositories that already test one.
+  const testsPrerelease = tested.some((entry) => entry.status !== "stable");
   const updates = [];
   for (const candidate of candidates) {
     if (compareVersions(candidate.version, lowest) < 0) {
       continue;
     }
     const isStable = candidate.status === "stable";
+    if (!isStable && !testsPrerelease) {
+      continue;
+    }
     const sameLine = tested.filter((entry) => line(entry.version) === line(candidate.version));
     if (!isStable && sameLine.some((entry) => entry.status === "stable" && compareVersions(entry.version, candidate.version) >= 0)) {
       continue;
@@ -123,4 +129,21 @@ export function parsePlan(body) {
 export function withoutHandled(updates, closedBodies) {
   const handled = new Set(closedBodies.flatMap(parsePlan));
   return updates.filter((update) => !handled.has(releaseName(update.release)));
+}
+
+export function expectedTested(tested, updates) {
+  const removed = new Set(updates.flatMap((update) => update.replaced.map(releaseName)));
+  const kept = tested.filter((entry) => !removed.has(releaseName(entry)));
+  return normalizeTested([...kept, ...updates.map((update) => update.release)]);
+}
+
+const PULL_MARKER = /<!-- godot-release-pull: ([^ >]*) ([0-9a-f]*) -->/;
+
+export function pullMarker(plan, sha) {
+  return `<!-- godot-release-pull: ${plan} ${sha} -->`;
+}
+
+export function parsePullMarker(body) {
+  const match = PULL_MARKER.exec(body ?? "");
+  return match ? { plan: match[1], sha: match[2] } : null;
 }

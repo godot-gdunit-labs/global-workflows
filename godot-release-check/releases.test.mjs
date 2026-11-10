@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compareStatus, compareVersions, normalizeTested, normalizeVersion, parsePlan, parseTag, planMarker, planUpdates, releaseName, selectCandidates, withoutHandled } from "./releases.mjs";
+import { compareStatus, compareVersions, expectedTested, normalizeTested, normalizeVersion, parsePlan, parsePullMarker, parseTag, planMarker, planUpdates, pullMarker, releaseName, selectCandidates, withoutHandled } from "./releases.mjs";
 
 const release = (tag, prerelease, published = "2026-10-01T00:00:00Z") => ({ tag_name: tag, prerelease, draft: false, published_at: published });
 const tested = (...names) => normalizeTested(names.map((name) => parseTag(name)));
@@ -87,7 +87,6 @@ test("planUpdates skips releases below the lowest tested version", () => {
 test("planUpdates updates a version line to its latest patch", () => {
   assert.deepEqual(plan(selectCandidates(RELEASES), ["4.6.2-stable", "4.7.2-stable"]), [
     { release: "4.6.3-stable", replaced: ["4.6.2-stable"], newLine: false },
-    { release: "4.8-beta2", replaced: [], newLine: true },
   ]);
 });
 
@@ -105,10 +104,7 @@ test("planUpdates shrinks and updates a version line in one step", () => {
 });
 
 test("planUpdates adds a missing version line at or above the lowest tested version", () => {
-  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.5-stable", "4.6.3-stable"]), [
-    { release: "4.7.2-stable", replaced: [], newLine: true },
-    { release: "4.8-beta2", replaced: [], newLine: true },
-  ]);
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.5-stable", "4.6.3-stable"]), [{ release: "4.7.2-stable", replaced: [], newLine: true }]);
 });
 
 test("planUpdates replaces the prereleases of a line once it is stable", () => {
@@ -141,4 +137,28 @@ test("withoutHandled drops releases listed in closed issues", () => {
   const closed = ["<!-- godot-release-plan: 4.6.3-stable,4.8-beta1 -->", "unrelated"];
   assert.deepEqual(names(withoutHandled(updates, closed).map((update) => update.release)), ["4.7.2-stable", "4.8-beta2"]);
   assert.deepEqual(withoutHandled(updates, []).length, 3);
+});
+
+test("expectedTested replaces the updated releases and keeps the others", () => {
+  const current = tested("4.6.2-stable", "4.7-stable", "4.7.1-stable", "4.8-dev7");
+  const updates = planUpdates(selectCandidates(RELEASES), current);
+  assert.deepEqual(names(expectedTested(current, updates)), ["4.6.3-stable", "4.7.2-stable", "4.8-beta2"]);
+  assert.deepEqual(names(expectedTested(current, [])), names(current));
+});
+
+test("planUpdates plans prereleases only for repositories that already test one", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable"]), [{ release: "4.7.2-stable", replaced: ["4.7-stable"], newLine: false }]);
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7.2-stable", "4.6-rc1"]), [
+    { release: "4.6.3-stable", replaced: ["4.6-rc1"], newLine: false },
+    { release: "4.8-beta2", replaced: [], newLine: true },
+  ]);
+});
+
+test("pullMarker and parsePullMarker round trip the plan and the commit", () => {
+  const marker = pullMarker("4.7.2-stable,4.8-beta2", "0123abcd");
+  assert.deepEqual(parsePullMarker(`text
+${marker}
+`), { plan: "4.7.2-stable,4.8-beta2", sha: "0123abcd" });
+  assert.equal(parsePullMarker("no marker"), null);
+  assert.equal(parsePullMarker(undefined), null);
 });

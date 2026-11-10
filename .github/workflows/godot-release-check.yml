@@ -6,7 +6,7 @@ on:  # yamllint disable-line rule:truthy
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Report the result only, do not create issues.'
+        description: 'Report the result and show the changes only, do not create issues or pull requests.'
         required: false
         type: boolean
         default: false
@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LLM_MODEL: 'gemini-3.5-flash'
   REPOSITORIES: 'gdUnit4,gdUnit4Net,gdUnit4NetExamples,gdUnit4-action'
   ISSUE_ASSIGNEE: 'MikeSchulze'
+  PULL_LABELS: 'Exclude from release notes'
 
 jobs:
   test:
@@ -44,6 +44,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+
+      - name: 'Install the dependencies'
+        run: npm ci --prefix godot-release-check --ignore-scripts --no-audit --no-fund
 
       - name: 'Run the tests'
         run: node --test 'godot-release-check/*.test.mjs'
@@ -66,7 +69,10 @@ jobs:
         with:
           node-version: '24'
 
-      - name: 'Create the issue token'
+      - name: 'Install the dependencies'
+        run: npm ci --prefix godot-release-check --ignore-scripts --no-audit --no-fund
+
+      - name: 'Create the bot token'
         id: app-token
         if: vars.GDUNIT_BOT_APP_ID != '' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
         uses: actions/create-github-app-token@v3
@@ -76,11 +82,14 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ env.REPOSITORIES }}
           permission-issues: write
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-organization-projects: write
 
       - name: 'Check the repositories'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ISSUE_TOKEN: ${{ steps.app-token.outputs.token }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          BOT_TOKEN: ${{ steps.app-token.outputs.token }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: node godot-release-check/check.mjs
