@@ -86,6 +86,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+          permission-organization-projects: write
 
       - name: 'Check the repositories'
         env:

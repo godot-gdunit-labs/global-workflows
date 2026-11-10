@@ -101,7 +101,8 @@ such as steps, actions, expressions or secrets. The tested versions are then rea
 When the plan changes, the pull request is updated, unless its branch has commits that were not made by the check.
 A closed pull request is not opened again for the same plan.
 
-The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows** with read and write access.
+The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows**
+and the organization permission **Projects** with read and write access.
 
 The checked repositories are listed in the workflow.
 A manual run from the **Actions** tab can use `dry_run` to only show the result and the verified edits in the log.
