@@ -95,18 +95,26 @@ The issue follows the task template of the repository, so it passes the issue tr
 * Repositories without a task template get a description and acceptance criteria.
 * An open issue is rewritten when its body differs from the generated one.
 
-For each issue it also opens a pull request on the branch `TASK-<issue>` that updates the CI matrix and the supported Godot versions of the README.
-An LLM writes the changes as exact search and replace edits, which are rejected if they change anything else than Godot versions,
-such as steps, actions, expressions or secrets. The tested versions are then read back from the changed workflows and must match the plan.
+The tested versions are read from the workflow files by a script, no LLM is involved:
+
+* A `godot-version` key sets them as a matrix list (`['4.7', '4.7.1']`), a matrix `include` entry or a step input (`'4.8'`),
+  a `godot-versions` key as a JSON list passed to a reusable workflow (`'["4.5.1", "4.6.2"]'`).
+* The status comes from a `godot-status` or `godot-status-version` key of the same mapping, it is stable without one.
+* Expressions such as `${{ inputs.godot-version }}` and commented out lines are ignored.
+* Prereleases are only planned for repositories that already test one.
+
+For each issue it also opens a pull request on the branch `TASK-<issue>` that updates these values, it never adds or removes lines:
+
+* In a stable list, the replaced patches of a line are swapped for its latest release, and a new version line is added in version order.
+* An `include` entry or step input is moved to the latest release of its own line, together with its status.
+* An update without a list or entry to change, such as a new version line in a repository without a stable list, is listed in the issue as a manual change.
+* The README is not changed.
+
 When the plan changes, the pull request is updated, unless its branch has commits that were not made by the check.
 A closed pull request is not opened again for the same plan.
-
-The LLM is set by `LLM_PROVIDER` and `LLM_MODEL` in the workflow, its key is the secret `LLM_API_KEY`.
-The provider `opencode-go` uses the responses API of the OpenCode Go subscription, `opencode-zen` the one of OpenCode Zen and `gemini` the Gemini API.
-`LLM_BASE_URL` can point to another endpoint, and `LLM_REASONING` sets the reasoning effort of the responses API, `low` by default.
 
 The GitHub App needs the repository permissions **Issues**, **Contents**, **Pull requests** and **Workflows**
 and the organization permission **Projects** with read and write access.
 
 The checked repositories are listed in the workflow.
-A manual run from the **Actions** tab can use `dry_run` to only show the result and the verified edits in the log.
+A manual run from the **Actions** tab can use `dry_run` to only show the result and the changes in the log.

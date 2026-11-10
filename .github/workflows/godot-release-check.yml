@@ -6,7 +6,7 @@ on:  # yamllint disable-line rule:truthy
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Report the result and verify the edits only, do not create issues or pull requests.'
+        description: 'Report the result and show the changes only, do not create issues or pull requests.'
         required: false
         type: boolean
         default: false
@@ -22,8 +22,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LLM_PROVIDER: 'opencode-go'
-  LLM_MODEL: 'gpt-6-luna'
   REPOSITORIES: 'gdUnit4,gdUnit4Net,gdUnit4NetExamples,gdUnit4-action'
   ISSUE_ASSIGNEE: 'MikeSchulze'
   PULL_LABELS: 'Exclude from release notes'
@@ -57,7 +55,7 @@ jobs:
     name: 'Check for new Godot releases'
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -93,6 +91,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           BOT_TOKEN: ${{ steps.app-token.outputs.token }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: node godot-release-check/check.mjs
