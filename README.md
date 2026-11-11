@@ -125,9 +125,9 @@ A manual run from the **Actions** tab can use `dry_run` to only show the result 
 The cleanup runs every Sunday at 00:00 UTC and deletes the workflow runs of all repositories listed in the workflow with one set of rules.
 Completed runs with a `cancelled` or `skipped` conclusion, and completed runs whose repository ref no longer exists,
 are deleted immediately.
-Every run is also deleted when it is older than the configured age limit, regardless of status.
+Other completed runs are deleted when older than the configured age limit. Incomplete runs are deleted when older than
+both the configured age limit and 14 days, because GitHub does not allow deleting them sooner.
 
-* The age limit applies to runs of every status, including runs that are not completed yet.
 * There is no exception for the newest run of a workflow.
 * Runs of pull requests from forks are not subject to the missing-ref rule, as the branch of a fork is not part of
   the repository.

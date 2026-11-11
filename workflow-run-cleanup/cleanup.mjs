@@ -1,6 +1,16 @@
 import { appendFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
-import { cell, compactRun, cutoffTime, deletionReason, nextPage, parseRepositories, REASONS, uniqueRuns } from "./rules.mjs";
+import {
+  cell,
+  compactRun,
+  cutoffTime,
+  deletionReason,
+  MIN_INCOMPLETE_RUN_AGE_DAYS,
+  nextPage,
+  parseRepositories,
+  REASONS,
+  uniqueRuns,
+} from "./rules.mjs";
 
 const OWNER = process.env.OWNER || "godot-gdunit-labs";
 const TOKEN = process.env.GITHUB_TOKEN ?? "";
@@ -116,7 +126,12 @@ async function cleanup(repository, now) {
   // list runs first so a ref created during the scan is not mistaken for a deleted ref
   const runs = uniqueRuns(await paginate(`repos/${fullName}/actions/runs`, "workflow_runs", compactRun));
   const refs = await loadRefs(repository.name);
-  const context = { repository: fullName, refs, cutoff: cutoffTime(now, repository.daysToKeep) };
+  const context = {
+    repository: fullName,
+    refs,
+    cutoff: cutoffTime(now, repository.daysToKeep),
+    incompleteCutoff: cutoffTime(now, Math.max(repository.daysToKeep, MIN_INCOMPLETE_RUN_AGE_DAYS)),
+  };
   const selected = runs
     .map((run) => ({ run, reason: deletionReason(run, context) }))
     .filter((entry) => entry.reason !== null);

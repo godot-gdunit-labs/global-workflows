@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cell, compactRun, cutoffTime, DAY_MS, deletionReason, nextPage, parseRepositories, REASONS, uniqueRuns } from "./rules.mjs";
+import {
+  cell,
+  compactRun,
+  cutoffTime,
+  DAY_MS,
+  deletionReason,
+  MIN_INCOMPLETE_RUN_AGE_DAYS,
+  nextPage,
+  parseRepositories,
+  REASONS,
+  uniqueRuns,
+} from "./rules.mjs";
 
 const NOW = Date.parse("2026-11-10T00:00:00Z");
 const CONTEXT = {
   repository: "owner/repo",
   refs: new Set(["master", "TASK-1", "v6.0.0"]),
   cutoff: cutoffTime(NOW, 12),
+  incompleteCutoff: cutoffTime(NOW, Math.max(12, MIN_INCOMPLETE_RUN_AGE_DAYS)),
 };
 
 function run(fields = {}) {
@@ -51,6 +63,18 @@ test("deletionReason expires old runs regardless of status", () => {
       REASONS.expired,
     );
   }
+});
+
+test("deletionReason keeps incomplete runs until GitHub's minimum age", () => {
+  const atThirteenDays = new Date(NOW - 13 * DAY_MS).toISOString();
+  const atFourteenDays = new Date(NOW - 14 * DAY_MS).toISOString();
+  const olderThanFourteenDays = new Date(NOW - 14 * DAY_MS - 1).toISOString();
+  assert.equal(deletionReason(run({ status: "in_progress", created_at: atThirteenDays }), CONTEXT), null);
+  assert.equal(deletionReason(run({ status: "in_progress", created_at: atFourteenDays }), CONTEXT), null);
+  assert.equal(
+    deletionReason(run({ status: "in_progress", created_at: olderThanFourteenDays }), CONTEXT),
+    REASONS.expired,
+  );
 });
 
 test("deletionReason deletes cancelled and skipped runs", () => {

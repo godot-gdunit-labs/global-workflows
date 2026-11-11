@@ -1,4 +1,5 @@
 export const DAY_MS = 24 * 60 * 60 * 1000;
+export const MIN_INCOMPLETE_RUN_AGE_DAYS = 14;
 
 const REPOSITORY_NAME = /^[A-Za-z0-9_.-]+$/;
 
@@ -67,10 +68,10 @@ export function uniqueRuns(runs) {
 
 /**
  * Returns why a compacted workflow run is deleted, or null to keep it.
- * The retention period applies to runs of every status. The deleted-ref rule only applies to runs from this
- * repository, as the branch of a pull request from a fork is not part of the repository.
+ * Incomplete runs use the cutoff that accounts for GitHub's minimum deletion age. The deleted-ref rule only applies
+ * to runs from this repository, as the branch of a pull request from a fork is not part of the repository.
  */
-export function deletionReason(run, { repository, refs, cutoff }) {
+export function deletionReason(run, { repository, refs, cutoff, incompleteCutoff }) {
   if (run.status === "completed") {
     if (run.conclusion === "cancelled") {
       return REASONS.cancelled;
@@ -82,7 +83,8 @@ export function deletionReason(run, { repository, refs, cutoff }) {
       return REASONS.deletedRef;
     }
   }
-  if (Date.parse(run.created_at) < cutoff) {
+  const retentionCutoff = run.status === "completed" ? cutoff : incompleteCutoff;
+  if (Date.parse(run.created_at) < retentionCutoff) {
     return REASONS.expired;
   }
   return null;
