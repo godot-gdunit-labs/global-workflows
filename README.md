@@ -81,7 +81,9 @@ The check is safe for pull requests from forks, because nothing from the checked
 ## Godot Release Check
 
 The release check runs every Monday and looks for new Godot releases that the CI of a repository doesn't test yet.
-For each version line, such as `4.7`, only the latest release should be tested, for example `4.7.2` instead of `4.7` and `4.7.1`.
+For each version line, such as `4.7`, the latest release should be tested, for example `4.7.2` instead of `4.7.1`.
+A line that tests its base release, such as `4.7`, is supported from its first release, the base release stays next to the latest one,
+for example `4.7` and `4.7.2` instead of `4.7` and `4.7.1`.
 It keeps one open issue per repository that lists all needed updates.
 Releases below the lowest Godot version a repository tests are ignored, and a release of a closed issue is not reported again,
 unless the issue triage of the repository closed it with the `triage:failed` label.
@@ -105,8 +107,12 @@ The tested versions are read from the workflow files by a script, no LLM is invo
 
 For each issue it also opens a pull request on the branch `TASK-<issue>` that updates these values, it never adds or removes lines:
 
-* In a stable list, the replaced patches of a line are swapped for its latest release, and a new version line is added in version order.
-* An `include` entry or step input is moved to the latest release of its own line, together with its status.
+* In a stable list, the patches of a line other than its base release are swapped for the latest release,
+  and a new version line is added in version order.
+* An `include` entry or step input is moved to the latest release of its own line, together with its status,
+  unless it holds the base release of the line.
+* A line that is only set by `include` entries or step inputs with its base release has no place for the latest release,
+  the update is listed in the issue as a manual change.
 * An update without a list or entry to change, such as a new version line in a repository without a stable list, is listed in the issue as a manual change.
 * The README is not changed.
 

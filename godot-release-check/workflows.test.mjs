@@ -94,15 +94,29 @@ test("testedVersions combines the versions and statuses of all files", () => {
 });
 
 test("applyUpdates replaces the patches of a line in a list and updates the prerelease entry", () => {
-  const result = applyUpdates(files(["ci.yml", MATRIX]), [update("4.7.2-stable", ["4.7-stable", "4.7.1-stable"]), update("4.8-beta3", ["4.8-dev7"])]);
+  const result = applyUpdates(files(["ci.yml", MATRIX]), [update("4.7.2-stable", ["4.7.1-stable"]), update("4.8-beta3", ["4.8-dev7"])]);
   assert.equal(result.manual.length, 0);
   assert.deepEqual(changedLines(MATRIX, result.changed[0].content), [
     "6: - godot-version: ['4.7', '4.7.1']  # tested versions",
-    "6: + godot-version: ['4.7.2']  # tested versions",
+    "6: + godot-version: ['4.7', '4.7.2']  # tested versions",
     "11: - godot-status: 'dev7'",
     "11: + godot-status: 'beta3'",
   ]);
-  assert.deepEqual(names(testedVersions(result.changed)), ["4.7.2-stable", "4.8-beta3"]);
+  assert.deepEqual(names(testedVersions(result.changed)), ["4.7-stable", "4.7.2-stable", "4.8-beta3"]);
+});
+
+test("applyUpdates adds the latest patch next to the base release of a line only", () => {
+  const content = "        godot-version: ['4.6', '4.7']\n";
+  const other = "        godot-version: ['4.6']\n";
+  const { changed, manual } = applyUpdates(files(["ci.yml", content], ["dev.yml", other]), [update("4.7.2-stable")]);
+  assert.equal(manual.length, 0);
+  assert.deepEqual(changed, [{ path: "ci.yml", content: "        godot-version: ['4.6', '4.7', '4.7.2']\n" }]);
+});
+
+test("applyUpdates keeps a step input with the base release and reports the latest one as manual", () => {
+  const { changed, manual } = applyUpdates(files(["ci.yml", STEP]), [update("4.7.2-stable")]);
+  assert.deepEqual(changed, []);
+  assert.deepEqual(manual.map((entry) => releaseName(entry.release)), ["4.7.2-stable"]);
 });
 
 test("applyUpdates keeps other versions and the order of a list", () => {

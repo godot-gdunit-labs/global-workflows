@@ -99,13 +99,13 @@ function issueBody(repository, updates, manual, tested, template) {
   const content = {
     description: [
       `New \`Godot\` releases are available that the CI workflows don't test yet, they currently test ${tested.map((entry) => `\`${releaseName(entry)}\``).join(", ")}.`,
-      "Only the latest release of each version line is tested, a pull request with the update is opened automatically:",
+      "Each version line is tested with its latest release and, when it is tested, its base release, a pull request with the update is opened automatically:",
       "",
       ...updates.map(describeUpdate),
       ...manualNote(manual),
     ].join("\n"),
     criteria: [
-      ...updates.map((update) => `- [ ] The CI matrix tests \`Godot\` \`${releaseName(update.release)}\` as the only version of the \`${versionLine(update.release.version)}\` line`),
+      ...updates.map((update) => `- [ ] The CI matrix tests \`Godot\` \`${releaseName(update.release)}\` as the latest version of the \`${versionLine(update.release.version)}\` line`),
       "- [ ] All CI checks pass",
     ].join("\n"),
   };
@@ -219,7 +219,7 @@ function pullBody(repository, issueNumber, updates, manual, plan, sha) {
     "",
     "## What",
     "",
-    "Updates the `Godot` versions of the CI matrix, only the latest release of each version line is tested:",
+    "Updates the `Godot` versions of the CI matrix, each version line is tested with its latest release and, when it is tested, its base release:",
     "",
     ...updates.map(describeUpdate),
     ...manualNote(manual),

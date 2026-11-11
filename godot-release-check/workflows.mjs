@@ -1,4 +1,4 @@
-import { compareVersions, normalizeTested, normalizeVersion, releaseName } from "./releases.mjs";
+import { compareVersions, normalizeTested, normalizeVersion, releaseName, versionLine } from "./releases.mjs";
 
 // Finds and updates the Godot versions of GitHub Actions workflows without a YAML round trip, so
 // comments, quoting and formatting stay untouched. A version is set by a `godot-version` key, as a
@@ -167,7 +167,8 @@ export function applyUpdates(files, updates) {
             continue;
           }
           const keep = entry.current.filter((raw) => !replaced.has(`${normalizeVersion(raw)}-stable`));
-          if (keep.length === entry.current.length && !update.newLine) {
+          const hasLine = entry.current.some((raw) => versionLine(normalizeVersion(raw)) === versionLine(target.version));
+          if (keep.length === entry.current.length && !update.newLine && !hasLine) {
             continue;
           }
           if (!keep.some((raw) => normalizeVersion(raw) === target.version)) {
