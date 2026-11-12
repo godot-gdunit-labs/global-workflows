@@ -1,0 +1,85 @@
+name: workflow-run-cleanup
+
+on:  # yamllint disable-line rule:truthy
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List the runs that would be deleted in the job summary (default), do not delete them.'
+        required: false
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - '.github/workflows/workflow-run-cleanup.yml'
+      - 'workflow-run-cleanup/**'
+
+permissions: {}
+
+concurrency:
+  group: workflow-run-cleanup-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REPOSITORIES: 'gdUnit4,gdUnit4Net,gdUnit4NetExamples,gdUnit4-action'
+  DAYS_TO_KEEP: '12'
+  # Entries of '<repository>=<days>' that keep the runs of a listed repository for another number of days
+  DAYS_TO_KEEP_OVERRIDES: ''
+
+jobs:
+  test:
+    name: 'Test the cleanup rules'
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: 'Run the tests'
+        run: node --test 'workflow-run-cleanup/*.test.mjs'
+
+  cleanup:
+    name: 'Clean up the workflow runs'
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: 'Create the bot token'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.GDUNIT_BOT_APP_ID }}
+          private-key: ${{ secrets.GDUNIT_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ env.REPOSITORIES }}
+          permission-actions: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'read' || 'write' }}
+          permission-contents: read
+
+      - name: 'Clean up the repositories'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: node workflow-run-cleanup/cleanup.mjs

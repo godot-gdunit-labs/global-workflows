@@ -5,6 +5,7 @@ Shared GitHub Actions workflows of the [godot-gdunit-labs](https://github.com/go
 * [`.github/workflows/formatting-checks.yml`](.github/workflows/formatting-checks.yml) is the shared formatting check for pull requests.
 * [`formatting/`](formatting) holds the rules and scripts of the formatting check.
 * [`.github/workflows/godot-release-check.yml`](.github/workflows/godot-release-check.yml) reports new Godot releases that the CI of a repository doesn't test yet.
+* [`.github/workflows/workflow-run-cleanup.yml`](.github/workflows/workflow-run-cleanup.yml) deletes the old workflow runs of the repositories.
 
 The organization profile and community files live in [godot-gdunit-labs/.github](https://github.com/godot-gdunit-labs/.github).
 
@@ -124,3 +125,25 @@ and the organization permission **Projects** with read and write access.
 
 The checked repositories are listed in the workflow.
 A manual run from the **Actions** tab can use `dry_run` to only show the result and the changes in the log.
+
+## Workflow Run Cleanup
+
+The cleanup runs every Sunday at 00:00 UTC and deletes the workflow runs of all repositories listed in the workflow with one set of rules.
+Completed runs with a `cancelled` or `skipped` conclusion, and completed runs whose repository ref no longer exists,
+are deleted immediately.
+Other completed runs are deleted when older than the configured age limit. Incomplete runs are deleted when older than
+both the configured age limit and 14 days, because GitHub does not allow deleting them sooner.
+
+* There is no exception for the newest run of a workflow.
+* Runs of pull requests from forks are not subject to the missing-ref rule, as the branch of a fork is not part of
+  the repository.
+
+The age limit is 12 days, set by `DAYS_TO_KEEP` in the workflow. Other than the immediate-deletion rules above, runs
+younger than this limit are kept.
+`DAYS_TO_KEEP_OVERRIDES` sets another number of days for single repositories, for example `gdUnit4Net=5, gdUnit4=20`.
+
+A manual run from the **Actions** tab defaults to `dry_run` and only lists the runs that would be deleted in the job summary.
+Set `dry_run` to `false` to delete them.
+The summary of every run shows the number of deleted runs per repository and reason, and the runs that couldn't be deleted.
+
+The GitHub App needs the repository permissions **Actions** with read and write access and **Contents** with read access.
