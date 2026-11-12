@@ -84,21 +84,35 @@ test("planUpdates skips releases below the lowest tested version", () => {
   assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7.2-stable", "4.8-beta2"]), []);
 });
 
-test("planUpdates updates a version line to its latest patch", () => {
+test("planUpdates updates a version line without its base release to its latest patch", () => {
   assert.deepEqual(plan(selectCandidates(RELEASES), ["4.6.2-stable", "4.7.2-stable"]), [
     { release: "4.6.3-stable", replaced: ["4.6.2-stable"], newLine: false },
   ]);
 });
 
-test("planUpdates shrinks a version line with several patches to the latest one", () => {
-  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.7.2-stable", "4.8-beta2"]), [
-    { release: "4.7.2-stable", replaced: ["4.7-stable", "4.7.1-stable"], newLine: false },
+test("planUpdates adds the latest patch next to the base release of a line", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.6-stable", "4.7.2-stable"]), [{ release: "4.6.3-stable", replaced: [], newLine: false }]);
+});
+
+test("planUpdates replaces the latest patch and keeps the base release of a line", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.6-stable", "4.6.2-stable", "4.7.2-stable"]), [
+    { release: "4.6.3-stable", replaced: ["4.6.2-stable"], newLine: false },
   ]);
+});
+
+test("planUpdates shrinks a version line with several patches to the base and the latest one", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.7.2-stable", "4.8-beta2"]), [
+    { release: "4.7.2-stable", replaced: ["4.7.1-stable"], newLine: false },
+  ]);
+});
+
+test("planUpdates skips a line that already tests its base and its latest release", () => {
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.2-stable", "4.8-beta2"]), []);
 });
 
 test("planUpdates shrinks and updates a version line in one step", () => {
   assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable", "4.7.1-stable", "4.8-dev7"]), [
-    { release: "4.7.2-stable", replaced: ["4.7-stable", "4.7.1-stable"], newLine: false },
+    { release: "4.7.2-stable", replaced: ["4.7.1-stable"], newLine: false },
     { release: "4.8-beta2", replaced: ["4.8-dev7"], newLine: false },
   ]);
 });
@@ -142,12 +156,12 @@ test("withoutHandled drops releases listed in closed issues", () => {
 test("expectedTested replaces the updated releases and keeps the others", () => {
   const current = tested("4.6.2-stable", "4.7-stable", "4.7.1-stable", "4.8-dev7");
   const updates = planUpdates(selectCandidates(RELEASES), current);
-  assert.deepEqual(names(expectedTested(current, updates)), ["4.6.3-stable", "4.7.2-stable", "4.8-beta2"]);
+  assert.deepEqual(names(expectedTested(current, updates)), ["4.6.3-stable", "4.7-stable", "4.7.2-stable", "4.8-beta2"]);
   assert.deepEqual(names(expectedTested(current, [])), names(current));
 });
 
 test("planUpdates plans prereleases only for repositories that already test one", () => {
-  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable"]), [{ release: "4.7.2-stable", replaced: ["4.7-stable"], newLine: false }]);
+  assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7-stable"]), [{ release: "4.7.2-stable", replaced: [], newLine: false }]);
   assert.deepEqual(plan(selectCandidates(RELEASES), ["4.7.2-stable", "4.6-rc1"]), [
     { release: "4.6.3-stable", replaced: ["4.6-rc1"], newLine: false },
     { release: "4.8-beta2", replaced: [], newLine: true },

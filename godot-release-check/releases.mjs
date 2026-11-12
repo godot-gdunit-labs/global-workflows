@@ -82,6 +82,12 @@ export function versionLine(version) {
   return line(version);
 }
 
+// A tested base release of a version line, such as `4.7`, marks the line as supported from its
+// first release, it stays in the matrix next to the latest release.
+function baseRelease(entries) {
+  return entries.find((entry) => entry.status === "stable" && entry.version === line(entry.version)) ?? null;
+}
+
 export function planUpdates(candidates, tested) {
   if (tested.length === 0) {
     return [];
@@ -103,14 +109,16 @@ export function planUpdates(candidates, tested) {
     if (!isStable && sameLine.some((entry) => entry.status === "stable" && compareVersions(entry.version, candidate.version) >= 0)) {
       continue;
     }
-    const replaced = isStable ? sameLine : sameLine.filter((entry) => entry.status !== "stable");
-    if (replaced.some((entry) => compareReleases(entry, candidate) > 0)) {
+    const minimum = isStable ? baseRelease(sameLine) : null;
+    const outdated = isStable ? sameLine.filter((entry) => entry !== minimum) : sameLine.filter((entry) => entry.status !== "stable");
+    if (outdated.some((entry) => compareReleases(entry, candidate) > 0)) {
       continue;
     }
-    if (replaced.length === 1 && compareReleases(replaced[0], candidate) === 0) {
+    const replaced = outdated.filter((entry) => compareReleases(entry, candidate) !== 0);
+    if (replaced.length === 0 && sameLine.some((entry) => compareReleases(entry, candidate) === 0)) {
       continue;
     }
-    updates.push({ release: candidate, replaced: replaced.filter((entry) => compareReleases(entry, candidate) !== 0), newLine: sameLine.length === 0 });
+    updates.push({ release: candidate, replaced, newLine: sameLine.length === 0 });
   }
   return updates;
 }
