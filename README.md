@@ -112,7 +112,7 @@ For each issue it also opens a pull request on the branch `TASK-<issue>` that up
 * An `include` entry or step input is moved to the latest release of its own line, together with its status,
   unless it holds the base release of the line.
 * A line that is only set by `include` entries or step inputs with its base release has no place for the latest release,
-  the update is listed in the issue as a manual change.
+  the base release is tested on purpose and the update is skipped, no issue is opened for it.
 * An update without a list or entry to change, such as a new version line in a repository without a stable list, is listed in the issue as a manual change.
 * The README is not changed.
 

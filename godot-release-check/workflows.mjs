@@ -146,7 +146,9 @@ function renderValue(value, items) {
 }
 
 // Applies the planned updates to the workflow files. An update that has no place to go, such as a
-// new version line in a repository without a stable matrix list, is returned as manual.
+// new version line in a repository without a stable matrix list, is returned as manual. An update
+// that only adds a release next to a kept base release that has no place to go, such as a step input
+// with `4.7`, is returned as skipped, as the base release is tested on purpose.
 export function applyUpdates(files, updates) {
   const states = files.map((file) => {
     const lines = file.content.split("\n");
@@ -155,6 +157,7 @@ export function applyUpdates(files, updates) {
   });
   const applied = [];
   const manual = [];
+  const skipped = [];
   for (const update of updates) {
     const target = update.release;
     const replaced = new Set(update.replaced.map(releaseName));
@@ -190,7 +193,13 @@ export function applyUpdates(files, updates) {
         }
       }
     }
-    (used ? applied : manual).push(update);
+    if (used) {
+      applied.push(update);
+    } else if (update.newLine || update.replaced.length > 0) {
+      manual.push(update);
+    } else {
+      skipped.push(update);
+    }
   }
   const changed = [];
   for (const { file, lines, entries } of states) {
@@ -205,7 +214,7 @@ export function applyUpdates(files, updates) {
       changed.push({ path: file.path, content });
     }
   }
-  return { changed, applied, manual };
+  return { changed, applied, manual, skipped };
 }
 
 export function changedLines(before, after) {

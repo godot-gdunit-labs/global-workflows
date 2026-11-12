@@ -113,10 +113,11 @@ test("applyUpdates adds the latest patch next to the base release of a line only
   assert.deepEqual(changed, [{ path: "ci.yml", content: "        godot-version: ['4.6', '4.7', '4.7.2']\n" }]);
 });
 
-test("applyUpdates keeps a step input with the base release and reports the latest one as manual", () => {
-  const { changed, manual } = applyUpdates(files(["ci.yml", STEP]), [update("4.7.2-stable")]);
+test("applyUpdates keeps a step input with the base release and skips the latest one", () => {
+  const { changed, manual, skipped } = applyUpdates(files(["ci.yml", STEP]), [update("4.7.2-stable")]);
   assert.deepEqual(changed, []);
-  assert.deepEqual(manual.map((entry) => releaseName(entry.release)), ["4.7.2-stable"]);
+  assert.deepEqual(manual, []);
+  assert.deepEqual(skipped.map((entry) => releaseName(entry.release)), ["4.7.2-stable"]);
 });
 
 test("applyUpdates keeps other versions and the order of a list", () => {

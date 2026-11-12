@@ -315,11 +315,15 @@ function previewChanges(files, changes) {
 
 async function syncChanges(repository, issues, files, pending, tested, write) {
   const changes = applyUpdates(files, pending);
-  const issue = await syncIssue(repository, issues, pending, changes.manual, tested, write);
+  const actionable = pending.filter((update) => !changes.skipped.includes(update));
+  if (actionable.length === 0) {
+    return "no change | no change";
+  }
+  const issue = await syncIssue(repository, issues, actionable, changes.manual, tested, write);
   let pull = "no change";
   try {
     if (changes.changed.length > 0 && write && issue.number) {
-      pull = await syncPullRequest(repository, issue, pending, changes);
+      pull = await syncPullRequest(repository, issue, actionable, changes);
     } else if (changes.changed.length > 0) {
       pull = previewChanges(files, changes);
     }
